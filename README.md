@@ -2,7 +2,7 @@
 
 Camera-based lower-limb **movement symmetry** monitoring for athletes recovering from surgery, and the physical therapists who guide them.
 
-The athlete runs three functional tests in front of a live camera in the browser. ATHLYx measures the operated leg against the healthy leg, scores the difference, and gives the therapist the measurements, a skeleton replay of every trial, and tools for notes, decisions and exercise plans.
+The athlete runs two functional tests in front of a live camera in the browser. ATHLYx measures the operated leg against the healthy leg, scores the difference, and gives the therapist the measurements, a skeleton replay of every trial, and tools for notes, decisions and exercise plans.
 
 > **ATHLYx is a monitoring and decision-support aid.** It does not diagnose, does not measure healing and is not a return-to-sport clearance. Video is processed in the browser and never uploaded; only derived measurements and compact landmark sequences are stored.
 
@@ -96,7 +96,7 @@ Everything below lives in [`shared/scoring.js`](shared/scoring.js) as pure funct
    - *Borderline*: any test score in the 85–90% band, or the session was flagged noisy.
    - *Below target criteria*: any test score < 85%, or either landing marker below its 85% floor. The responsible test or marker is named.
    - *Insufficient data*: too few valid trials or unreliable tracking.
-5. **Trend score.** The average of the three test scores, drawn as a line across sessions. It never decides the status.
+5. **Trend score.** The average of the two test scores, drawn as a line across sessions. It never decides the status.
 
 Parameters (target 90%, band 85–90%, marker floor 85%, weights 0.70/0.30, 5° buffer, 3 trials minimum, 6 attempts maximum) are documented placeholders and still need clinician sign-off.
 

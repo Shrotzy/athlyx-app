@@ -17,12 +17,11 @@ Athletes recovering from lower-body surgery, such as ACL reconstruction or menis
 
 ### Solution
 
-The athlete performs three short functional tests in front of a live camera, on a schedule set by their physical therapist. The app tracks the body in real time in the browser, shows light live feedback and evaluates each test as soon as it is complete. Each test is done on both legs.
+The athlete performs two short functional tests in front of a live camera, on a schedule set by their physical therapist. The app tracks the body in real time in the browser, shows light live feedback and evaluates each test as soon as it is complete. Each test is done on both legs.
 
 | Test | What the athlete does | Camera view | What the app measures |
 | --- | --- | --- | --- |
 | Single hop for distance | Hops forward as far as possible on one leg and holds the landing | Side | Hop distance (scored). Landing knee flexion and forward trunk lean (shown to the therapist) |
-| Crossover hop (2 continuous hops) | Hops forward twice on one leg, crossing a center line each time, and holds the final landing | Side | Total hop distance (scored). Landing knee flexion (shown to the therapist) |
 | Single-leg landing | Steps down from a low step onto one leg and holds the landing | Front | Dynamic knee valgus and lateral trunk lean (scored) |
 
 The results go to the therapist, who can review the scores, watch a skeleton replay of every trial (an animated stick figure rebuilt from tracked landmarks, with no stored video), add notes to specific trials and send the athlete an exercise plan. The therapist always makes the clinical decisions. The app measures and informs.
@@ -52,7 +51,7 @@ Her hop distances are close between legs, but her right knee collapses inward mo
 - Distance symmetry can look normal while landing mechanics are not. Neither replaces strength testing, psychological readiness assessment and clinical judgment.
 - Camera-based 2D pose estimation is less accurate than lab equipment, so small differences may fall within measurement noise. The design reduces this by comparing each athlete against their own healthy leg, using several trials and providing a borderline status.
 - Hop distance is measured from a 2D camera view, so accuracy depends on a fixed camera position and the frame rate.
-- Valgus and lateral trunk lean are measured from the front view in the landing test, while hop distance, landing knee flexion and forward trunk lean are measured from the side view in the hop tests. The protocol fixes the camera position for each test.
+- Valgus and lateral trunk lean are measured from the front view in the landing test, while hop distance, landing knee flexion and forward trunk lean are measured from the side view in the hop test. The protocol fixes the camera position for each test.
 - The two-hop crossover hop from the original design was dropped: measuring two continuous hops reliably needs more work than a demo timeline allows, so it is not offered.
 - The 90% threshold is a commonly used benchmark and not a biological limit.
 - Video is processed in the browser and is never uploaded or stored. Only derived measurements and landmark data are saved, and they are visible only to the athlete and their linked therapist.
@@ -94,18 +93,17 @@ The status comes only from fixed rules, never from an AI model.
 | Below target criteria | Any test score is below 85%, or either landing marker score is below its floor. The responsible test or marker is named |
 | Insufficient data | Too few valid trials or unreliable tracking |
 
-A single trend score (the average of the three test scores) is shown only as a line across sessions. It never decides the status.
+A single trend score (the average of the two test scores) is shown only as a line across sessions. It never decides the status.
 
 ### Example
 
 An athlete 6 months after ACL surgery:
 
 - Single hop: 156 cm (operated) vs 170 cm (healthy) gives an LSI of 91.8%.
-- Crossover hop: 410 cm vs 460 cm total gives an LSI of 89.1%.
 - Landing: valgus 11° vs 4° gives a valgus score of 56.3%, and trunk lean 9° vs 6° gives a trunk score of 78.6%. Landing quality = 0.70 × 56.3 + 0.30 × 78.6, which is about 63%.
 - Supporting information: landing knee flexion 65° vs 75° (ratio 86.7%).
 - Status: **Below target criteria**, naming the landing (inward knee collapse). The hop distance alone would have looked close to passing.
-- Trend score: (91.8 + 89.1 + 63.0) ÷ 3, about 81.3%.
+- Trend score: (91.8 + 63.0) ÷ 2, about 77.4%.
 
 ### Parameters (placeholder values to tune with clinician input)
 
@@ -119,8 +117,7 @@ An athlete 6 months after ACL surgery:
 | Trials per leg per test | 1 practice + 3 scored |
 | Minimum valid scored trials per leg | 3 |
 | Maximum attempts per leg per test | 6 |
-| Crossover hop | 2 continuous hops (adapted from the standard 3) |
-| Trend score | Average of the three test scores |
+| Trend score | Average of the two test scores |
 
 ---
 
@@ -166,7 +163,7 @@ An athlete 6 months after ACL surgery:
 - A laptop with a webcam is enough for development. A GPU is not needed.
 - For real use: a phone or laptop on a stable stand, ideally recording at 60 frames per second, since hops and landings are fast.
 - Floor tape for a start line, plus a clear, non-slip surface with room for the longest hop.
-- Two camera positions: side view for the hop tests and front view for the landing test, with the camera kept fixed between legs.
+- Two camera positions: side view for the hop test and front view for the landing test, with the camera kept fixed between legs.
 
 ---
 
@@ -184,7 +181,7 @@ An athlete 6 months after ACL surgery:
 #### Setup
 
 1. Access the webcam or phone camera with permission and run each test as a live camera feed.
-2. Guide the user through setup: choose the operated leg, follow a camera placement guide (side view for hop tests, front view for the landing test), mark a start line and center line on the floor, and check that the full body, including the feet, is in frame.
+2. Guide the user through setup: choose the operated leg, follow a camera placement guide (side view for the hop test, front view for the landing test), mark a start line on the floor, and check that the full body, including the feet, is in frame.
 3. Check that the camera stays fixed between legs and between tests, and prompt "same setup as last time" for consistent comparisons.
 
 #### Live monitoring
@@ -197,9 +194,9 @@ An athlete 6 months after ACL surgery:
 
 #### Measurement
 
-1. For the hop tests, measure hop distance from the toe position at takeoff to the heel position at first stable landing, as a ratio between legs.
+1. For the hop test, measure hop distance from the toe position at takeoff to the heel position at first stable landing, as a ratio between legs.
 2. For the single-leg landing, measure peak knee valgus and peak lateral trunk lean from the front view.
-3. For the hop tests, record landing knee flexion and forward trunk lean from the side view as supporting information for the therapist.
+3. For the hop test, record landing knee flexion and forward trunk lean from the side view as supporting information for the therapist.
 
 #### Evaluation
 

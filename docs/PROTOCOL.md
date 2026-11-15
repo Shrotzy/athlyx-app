@@ -11,7 +11,6 @@ The app measures. It does not coach, diagnose or clear anyone.
 | Test | View | Why |
 | --- | --- | --- |
 | Single hop for distance | Side | Hop distance is a horizontal displacement; landing knee flexion and forward trunk lean are read in the sagittal plane |
-| Crossover hop (2 hops) | Side | Same, with the centre line crossing the camera |
 | Single-leg landing | Front | Knee valgus and lateral trunk lean are frontal-plane markers |
 
 Rules that apply to every test:
@@ -64,12 +63,6 @@ The last two are explicitly best-effort in the requirements: 2D pose from one ca
 - **Scored:** hop distance, toe position at take-off → heel position at the first stable landing.
 - **Supporting:** landing knee flexion (hip–knee–ankle interior angle, reported as 180° − interior, so a straight leg is 0°) and forward trunk lean (torso from vertical in the sagittal plane).
 - LSI = operated median ÷ healthy median × 100, capped at 100.
-
-### Crossover hop, two continuous hops (side view)
-
-- **Scored:** total distance, from the toe at the first take-off to the heel at the final stable landing. The take-off reference is frozen on the first hop so both hops count.
-- **Supporting:** landing knee flexion at the final landing.
-- This is an adaptation of the standard three-hop protocol, as stated in the requirements.
 
 ### Single-leg landing (front view)
 
