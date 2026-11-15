@@ -242,4 +242,4 @@ Facing the camera on a hop test is the most common cause of a hop that "is not d
 npm test
 ```
 
-25 unit tests cover the medians, LSI and its cap, the 5° buffer maths, the 0.70/0.30 landing weights, every status rule (including the marker floor and the noisy flag), void-trial exclusion, insufficient-data handling, and the spec's full worked example. Measurement, phase-detection and camera code are not unit-tested; they need bench validation against a tape measure and real recordings.
+61 unit tests cover the medians, LSI and its cap, the 5° buffer maths, the 0.70/0.30 landing weights, every status rule (including the marker floor and the noisy flag), void-trial exclusion, insufficient-data handling, and the spec's full worked example. Measurement, phase-detection and camera code are not unit-tested; they need bench validation against a tape measure and real recordings.
