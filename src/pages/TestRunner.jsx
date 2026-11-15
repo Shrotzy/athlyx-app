@@ -61,8 +61,8 @@ const SIGNAL_KEY = 'athlyx.signal';
  * there is nothing extra to download and nothing to get wrong in poor light.
  */
 const SIGNAL_MODES = [
-  ['pose', '🙋 hands on head'],
-  ['auto', '⏱ automatic'],
+  ['pose', 'Hands on head'],
+  ['auto', 'Automatic'],
 ];
 
 const SIGNAL_DETAIL = {
@@ -1027,7 +1027,7 @@ export default function TestRunner() {
           {camera ? (
             <span>
               {camera.width}×{camera.height}
-              {camera.frameRate ? ` · ${camera.frameRate} fps reported` : ''} · {camera.label}
+              {camera.frameRate ? ` · ${camera.frameRate} fps reported` : ''}
             </span>
           ) : null}
           <span className={bodyCheck.ok ? 'ok' : 'bad'}>
@@ -1066,14 +1066,14 @@ export default function TestRunner() {
               onClick={toggleVoice}
               disabled={!voiceSupported()}
             >
-              🔊 sound {voiceOn ? 'on' : 'off'}
+              Sound {voiceOn ? 'on' : 'off'}
             </button>
             <button type="button" className="chip" onClick={testSound} disabled={!voiceOn}>
-              test sound
+              Test sound
             </button>
             {voiceCommandSupport.supported ? (
               <button type="button" className="chip" aria-pressed={voiceCommandsOn} onClick={toggleVoiceCommands}>
-                🎙 voice {voiceCommandsOn ? (listenStatus === 'listening' ? 'listening' : 'on') : 'off'}
+                Voice {voiceCommandsOn ? (listenStatus === 'listening' ? 'listening' : 'on') : 'off'}
               </button>
             ) : null}
           </div>
