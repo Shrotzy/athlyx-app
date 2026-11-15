@@ -202,6 +202,9 @@ export function affirmationFor(index) {
 export const CUES = {
   cameraOn:
     'Camera on. Stand back until your feet are in frame, then hold the start position when you are ready.',
+  sideCamera:
+    'Film this test from the side. Turn ninety degrees so your hop travels across the screen, not towards the camera.',
+  frontCamera: 'Film this test from the front. Face the camera and keep your hips square.',
   readyToGo: 'Ready to go? Put both hands on top of your head.',
   readyToGoAuto: 'Ready to go. Starting in three, two, one.',
   practiceIntro: 'This first one is your practice trial. It is not scored.',

@@ -28,6 +28,7 @@ import {
   stopCamera,
 } from '../lib/pose.js';
 import { createHoldGate } from '../lib/gesture-gate.js';
+import { estimateView, expectedView } from '../lib/view.js';
 import {
   CUES,
   affirmationFor,
@@ -195,6 +196,14 @@ export default function TestRunner() {
   const [cue, setCue] = useState(null);
   const [holdProgress, setHoldProgress] = useState(0);
   const [handsSeen, setHandsSeen] = useState({ left: false, right: false });
+  const [view, setView] = useState(null);
+
+  // Every hop test reads distance across the screen, so it has to be filmed
+  // side-on; the landing test reads sideways knee travel, so it has to be
+  // filmed front-on.
+  const requiredView = expectedView(test);
+  const viewCue = requiredView === 'front' ? CUES.frontCamera : CUES.sideCamera;
+  const viewMismatch = Boolean(view && view !== requiredView);
   const [voiceOn, setVoiceOn] = useState(() => !voiceMuted() && voiceSupported());
   const [signal, setSignal] = useState(readSignal);
   const [voiceCommandsOn, setVoiceCommandsOn] = useState(() => readFlag(VOICE_COMMANDS_KEY, false));
@@ -509,6 +518,7 @@ export default function TestRunner() {
 
           if (now - lastOverlayRef.current <= 80) {
             setHandsSeen({ left: onHead.left, right: onHead.right });
+            setView(estimateView(named));
           }
 
           if (signalRef.current !== 'auto') {
@@ -620,7 +630,7 @@ export default function TestRunner() {
         arm(true);
         setCue({ text: 'READY', detail: SIGNAL_DETAIL[signal], tone: 'info' });
         chime('ready');
-        speak(`${CUES.cameraOn} ${readyPrompt(signal)}`);
+        speak(`${CUES.cameraOn} ${viewCue} ${readyPrompt(signal)}`);
       } else {
         setCue({ text: 'GET SET', detail: 'Starting automatically once you are in frame', tone: 'info' });
         speak(CUES.cameraOn);
@@ -1068,12 +1078,23 @@ export default function TestRunner() {
           <p className="muted small" style={{ margin: 0 }}>
             {SIGNAL_STATUS[signal]} {remainingText(progress)}.
           </p>
+          <p
+            className="small"
+            style={{ margin: 0, color: viewMismatch ? 'var(--warn, #f0b429)' : undefined }}
+          >
+            <strong>{requiredView === 'front' ? 'FRONT view' : 'SIDE view'}:</strong>{' '}
+            {requiredView === 'front'
+              ? 'face the camera with your hips square — this test reads sideways knee travel.'
+              : 'turn 90° so your hop travels across the screen, not towards the camera.'}
+            {viewMismatch ? ` You look ${view === 'front' ? 'front-on' : 'side-on'} right now.` : ''}
+          </p>
           {/* Says exactly what the tracker sees, so "it does not work" becomes a
               specific, fixable thing. */}
           <p className="muted small" style={{ margin: 0 }}>
-            pose {points ? 'found' : 'not found'} · hands {handsSeen.left ? 'left ✓' : 'left ✗'}{' '}
+                          pose {points ? 'found' : 'not found'} · hands {handsSeen.left ? 'left ✓' : 'left ✗'}{' '}
             {handsSeen.right ? 'right ✓' : 'right ✗'} · trigger {Math.round(holdProgress * 100)}% ·{' '}
-            {bodyCheck.ok ? 'body in frame' : `missing ${bodyCheck.missing.join(', ')}`} · {fps || '—'} fps
+            {bodyCheck.ok ? 'body in frame' : `missing ${bodyCheck.missing.join(', ')}`} ·{' '}
+            view {view || '—'} · {fps || '—'} fps
           </p>
           {audioNote ? (
             <p className="muted small hud-warn" style={{ margin: 0 }}>

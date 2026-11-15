@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { createHoldGate } from '../src/lib/gesture-gate.js';
 import { handsOnHead } from '../src/lib/start-pose.js';
+import { estimateView, expectedView } from '../src/lib/view.js';
 import { parseCommand } from '../src/lib/voice-commands.js';
 import { AFFIRMATIONS, affirmationFor } from '../src/lib/voice.js';
 
@@ -53,6 +54,35 @@ describe('handsOnHead (the start position)', () => {
         rightWrist: point(0.58, 0.16, false),
       }).both,
     ).toBe(false);
+  });
+});
+
+describe('estimateView', () => {
+  const skeleton = (shoulderX) => ({
+    leftShoulder: point(0.5 - shoulderX / 2, 0.3),
+    rightShoulder: point(0.5 + shoulderX / 2, 0.3),
+    leftHip: point(0.5 - shoulderX / 2, 0.55),
+    rightHip: point(0.5 + shoulderX / 2, 0.55),
+    leftAnkle: point(0.5, 0.9),
+    nose: point(0.5, 0.15),
+  });
+
+  it('reads a wide shoulder span as facing the camera', () => {
+    expect(estimateView(skeleton(0.2))).toBe('front');
+  });
+
+  it('reads narrow, overlapping shoulders as a side view', () => {
+    expect(estimateView(skeleton(0.04))).toBe('side');
+  });
+
+  it('reports nothing when the shoulders are not visible', () => {
+    expect(estimateView({})).toBeNull();
+  });
+
+  it('asks for a side view on the hop tests and a front view on the landing test', () => {
+    expect(expectedView('single-hop')).toBe('side');
+    expect(expectedView('crossover-hop')).toBe('side');
+    expect(expectedView('single-leg-landing')).toBe('front');
   });
 });
 

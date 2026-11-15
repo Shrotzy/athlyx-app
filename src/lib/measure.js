@@ -261,6 +261,10 @@ export class HopTrialDetector {
         this.state = 'airborne';
         return { phase: 'airborne', done: false, hint: 'Hold the landing — stay still.' };
       }
+      // Measure the landing from the *held* position, not from the first frame
+      // of contact: at contact the heel has not travelled yet, which made
+      // distances read short.
+      this.landingX = leg.heel.x;
       if (leg.knee && leg.hip) {
         const flexion = kneeFlexionDeg(leg.hip, leg.knee, leg.ankle);
         if (Number.isFinite(flexion)) {

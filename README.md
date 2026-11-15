@@ -197,6 +197,29 @@ Privacy: the microphone is only open while the runner page is live and voice com
 
 Accuracy is unchanged: the trial still has to be detected by the same rules, the same validity checks apply, and the score still comes from `shared/scoring.js`. Hands-free only changes how a trial is started.
 
+## How a hop is detected
+
+MediaPipe does not know what a hop is. It returns 33 body landmarks per frame — a point per joint, in normalised image coordinates — and the hop is our own rule set in `src/lib/measure.js`, run on five points of the tested leg: hip, knee, ankle, heel, toe.
+
+1. **Calibration.** While the athlete stands still, the ankle height is sampled over ~8 frames / 700 ms and the median becomes the floor line (`baselineY`). The standing hip-to-ankle distance becomes the pixel ruler for that session.
+2. **Take-off.** `lift = baselineY − ankle.y`, positive when the foot leaves the floor. A lift above 0.055 of frame height switches the trial to *airborne* and freezes the toe position as the take-off point.
+3. **Airborne.** Peak knee flexion is tracked; there is no fixed time limit per hop, only a 12 s trial window.
+4. **Landing.** The ankle coming back within 0.035 of the floor line ends the flight. The heel position at that moment is recorded, and then refined while the landing is held.
+5. **Hold.** The landing has to stay still for `PARAMS.holdSeconds`. Moving during the hold sends the trial back to *airborne*, which is why a bounce voids it.
+6. **Distance.** `|landingX − takeoffX| × aspect × legLengthCm / standingDy` — the pixel ruler turns image movement into centimetres. The LSI is a left/right ratio, so a fixed scale error cancels out.
+
+The single-leg landing test is different: its detector watches the hip centre drop on landing and measures frontal-plane knee valgus, so it needs the **front** view, not the side.
+
+## Which way to film
+
+| Test | Camera | Why |
+| --- | --- | --- |
+| Single hop | **Side** | Distance is measured across the image from take-off toe to landing heel |
+| Crossover hop | **Side** | Same, first take-off to final landing |
+| Single-leg landing | **Front** | Valgus is a sideways knee movement; from the side it is invisible |
+
+Facing the camera on a hop test is the most common cause of a hop that "is not detected": the jump travels towards the lens, so the horizontal distance is near zero and the trial is rejected. The runner states the required view on screen while the camera is on, and reports the view it thinks it sees.
+
 **When tracking drops, nothing is lost.** A trial that loses the pose is voided, not scored, and the reason is said out loud ("that one did not count — tracking lost"). A voided trial never restarts itself, even in automatic mode: you get the rest, then the runner waits for you to choose, so a bad run cannot eat the attempt budget. A voided attempt can also be discarded with one button. If a leg does use all six attempts without three valid trials, its page says so and offers **Start this leg again**, which clears only that test on that leg — the other leg and the other tests are untouched.
 
 ## Limitations
