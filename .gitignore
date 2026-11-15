@@ -26,3 +26,6 @@ data/
 # logs
 *.log
 npm-debug.log*
+
+# local export artifacts (downloadable zip, not part of the repo)
+artifacts/
