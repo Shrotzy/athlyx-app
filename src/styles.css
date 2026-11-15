@@ -145,6 +145,11 @@ small {
   border-bottom: 2px solid var(--accent);
 }
 
+/* The muted nav link colour must not win over a filled button sitting in the nav. */
+.nav a.button {
+  color: #04121a;
+}
+
 .link-button {
   background: none;
   border: 0;
