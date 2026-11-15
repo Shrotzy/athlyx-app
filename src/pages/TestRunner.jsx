@@ -364,7 +364,9 @@ export default function TestRunner() {
       let metrics = {};
       if (isLanding) {
         metrics = {
-          valgusDeg: round1(rawResult.peakValgusDeg),
+          // Stored as a magnitude: a knee outside the line is 0 degrees of
+          // valgus, never a negative number the API would reject.
+          valgusDeg: round1(Math.max(0, rawResult.peakValgusDeg ?? 0)),
           trunkLeanDeg: round1(rawResult.peakTrunkLeanDeg),
         };
         if (metrics.valgusDeg == null || metrics.trunkLeanDeg == null) voidReasons.push('no-landing-detected');

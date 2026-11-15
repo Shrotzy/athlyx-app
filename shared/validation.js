@@ -55,10 +55,37 @@ export function isValidTrial(trial) {
 
 const FINITE = (value) => typeof value === 'number' && Number.isFinite(value);
 
+// Angles that describe an amount of deviation. A negative reading means "no
+// deviation in the direction that matters", so it is stored as 0 rather than
+// rejected — clamping keeps a whole session from being lost to one such frame.
+const MAGNITUDE_METRICS = ['valgusDeg', 'trunkLeanDeg', 'kneeFlexionDeg'];
+
+export function normalizeTrialMetrics(trial) {
+  if (!trial?.metrics) return trial;
+  const metrics = { ...trial.metrics };
+  for (const key of MAGNITUDE_METRICS) {
+    if (FINITE(metrics[key]) && metrics[key] < 0) metrics[key] = 0;
+  }
+  return { ...trial, metrics };
+}
+
 const METRIC_RULES = {
   'single-hop': { required: ['hopDistanceCm'], optional: ['kneeFlexionDeg', 'forwardTrunkLeanDeg'] },
   'crossover-hop': { required: ['hopDistanceCm'], optional: ['kneeFlexionDeg', 'forwardTrunkLeanDeg'] },
   'single-leg-landing': { required: ['valgusDeg', 'trunkLeanDeg'], optional: [] },
+};
+
+/**
+ * Plausible ranges per metric. Angles that describe an amount of deviation are
+ * magnitudes, so they cannot be negative; only forward trunk lean is signed,
+ * because leaning back is a real (if unusual) measurement.
+ */
+const METRIC_RANGES = {
+  hopDistanceCm: [0, 400],
+  kneeFlexionDeg: [0, 180],
+  forwardTrunkLeanDeg: [-45, 90],
+  valgusDeg: [0, 90],
+  trunkLeanDeg: [0, 90],
 };
 
 /**
@@ -90,8 +117,9 @@ export function validateSessionPayload({ trials } = {}) {
     if (isValidTrial(trial)) {
       rules.required.forEach((key) => {
         if (!FINITE(metrics[key])) errors.push(`${where}: valid trial is missing a finite ${key}.`);
-        if (FINITE(metrics[key]) && (metrics[key] < 0 || metrics[key] > 1000)) {
-          errors.push(`${where}: ${key} is out of plausible range.`);
+        const [low, high] = METRIC_RANGES[key] || [0, 1000];
+        if (FINITE(metrics[key]) && (metrics[key] < low || metrics[key] > high)) {
+          errors.push(`${where}: ${key} must be between ${low} and ${high}, but was ${metrics[key]}.`);
         }
       });
     }

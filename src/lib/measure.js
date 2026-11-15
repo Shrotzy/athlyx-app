@@ -384,7 +384,11 @@ export class LandingTrialDetector {
 
     const valgus = frontalValgusDeg(leg.hip, leg.knee, leg.ankle, hipMid.x);
     if (Number.isFinite(valgus)) {
-      this.peakValgus = this.peakValgus == null ? valgus : Math.max(this.peakValgus, valgus);
+      // The marker is inward collapse, so the magnitude is what counts: a knee
+      // that tracks outside the hip-to-ankle line is 0 degrees of valgus, not a
+      // negative reading. Signed values here used to fail submission validation.
+      const inward = Math.max(0, valgus);
+      this.peakValgus = this.peakValgus == null ? inward : Math.max(this.peakValgus, inward);
     }
     const trunkLean = lateralTrunkLeanDeg(shoulderMid, hipMid);
     if (Number.isFinite(trunkLean)) {

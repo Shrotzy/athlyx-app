@@ -10,6 +10,7 @@ import {
   CAMERA_SETUPS,
   isValidTrial,
   normalizeVoidReasons,
+  normalizeTrialMetrics,
   validateSessionPayload,
 } from '../../shared/validation.js';
 import { DECISIONS } from '../../shared/constants.js';
@@ -146,7 +147,9 @@ sessionsRouter.post(
     }
 
     const body = req.body || {};
-    const trials = Array.isArray(body.trials) ? body.trials : [];
+    // Clients clamp at capture time, but a draft captured before that fix can
+    // still carry a signed angle, so the submit path normalises it too.
+    const trials = (Array.isArray(body.trials) ? body.trials : []).map(normalizeTrialMetrics);
 
     const validation = validateSessionPayload({ trials });
     if (!validation.ok) {
