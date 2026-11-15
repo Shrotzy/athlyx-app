@@ -62,7 +62,6 @@ export default function History() {
               <tr>
                 <th>Date</th>
                 <th>Single hop</th>
-                <th>Crossover hop</th>
                 <th>Landing</th>
                 {isTherapist && <th>Status</th>}
                 <th />
@@ -73,7 +72,6 @@ export default function History() {
                 <tr key={session.id}>
                   <td>{formatDate(session.capturedAt)}</td>
                   <td className="mono">{session.scores?.singleHop ?? '—'}%</td>
-                  <td className="mono">{session.scores?.crossoverHop ?? '—'}%</td>
                   <td className="mono">{session.scores?.landing ?? '—'}%</td>
                   {isTherapist && (
                     <td>

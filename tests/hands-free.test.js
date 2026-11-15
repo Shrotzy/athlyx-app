@@ -81,7 +81,6 @@ describe('estimateView', () => {
 
   it('asks for a side view on the hop tests and a front view on the landing test', () => {
     expect(expectedView('single-hop')).toBe('side');
-    expect(expectedView('crossover-hop')).toBe('side');
     expect(expectedView('single-leg-landing')).toBe('front');
   });
 });

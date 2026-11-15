@@ -1,6 +1,6 @@
 # ATHLYx — requirements
 
-ATHLYx is a web app that uses a live camera to measure how symmetrically a recovering athlete's surgical and healthy legs perform three functional tests: a single hop for distance, a crossover hop and a single-leg landing. It gives their physical therapist test scores, a skeleton replay and exercise-plan tools. It is a movement-monitoring and decision-support aid, not a diagnosis or a return-to-sport clearance.
+ATHLYx is a web app that uses a live camera to measure how symmetrically a recovering athlete's surgical and healthy legs perform two functional tests: a single hop for distance and a single-leg landing. It gives their physical therapist test scores, a skeleton replay and exercise-plan tools. It is a movement-monitoring and decision-support aid, not a diagnosis or a return-to-sport clearance.
 
 ---
 
@@ -36,13 +36,13 @@ The results go to the therapist, who can review the scores, watch a skeleton rep
 
 ### User scenario
 
-Maya is eight months out from ACL reconstruction. Her physical therapist has cleared her for hop testing and assigned a check-in. She props her phone at her marked spot in side view and selects her right knee as the operated leg. After a warm-up, she does a practice hop and three scored single hops on each leg, then the two-hop crossover hop. The app measures each distance and tells her when a trial is voided. She then moves the phone to the front for single-leg landings.
+Maya is eight months out from ACL reconstruction. Her physical therapist has cleared her for hop testing and assigned a check-in. She props her phone at her marked spot in side view and selects her right knee as the operated leg. After a warm-up, she does a practice hop and three scored single hops on each leg. The app measures each distance and tells her when a trial is voided. She then moves the phone to the front for single-leg landings.
 
 Her hop distances are close between legs, but her right knee collapses inward more on landing. Her therapist watches the skeleton replay, adds a note to the third landing trial and sends a short exercise plan with a message. Maya completes the plan over the next few days and repeats the check-in, and the therapist watches the trend across sessions.
 
 ### Scope for this version
 
-**In scope:** a web app with live camera tracking; three tests (single hop for distance, two-hop crossover hop, single-leg landing) on both legs; trial validity checks; LSI per hop test; landing mechanics measurement; criteria status for the therapist; scheduled check-ins; therapist review with skeleton replay and trial notes; exercise plans; history.
+**In scope:** a web app with live camera tracking; two tests (single hop for distance, single-leg landing) on both legs; trial validity checks; LSI per hop test; landing mechanics measurement; criteria status for the therapist; scheduled check-ins; therapist review with skeleton replay and trial notes; exercise plans; history.
 
 **Out of scope:** diagnosis, medical clearance or return-to-sport decisions, strength testing, timed hop tests, triple hop, patient-reported questionnaires, 3D reconstruction, multi-camera setups, native mobile apps, stored video, real patient data.
 
@@ -53,7 +53,7 @@ Her hop distances are close between legs, but her right knee collapses inward mo
 - Camera-based 2D pose estimation is less accurate than lab equipment, so small differences may fall within measurement noise. The design reduces this by comparing each athlete against their own healthy leg, using several trials and providing a borderline status.
 - Hop distance is measured from a 2D camera view, so accuracy depends on a fixed camera position and the frame rate.
 - Valgus and lateral trunk lean are measured from the front view in the landing test, while hop distance, landing knee flexion and forward trunk lean are measured from the side view in the hop tests. The protocol fixes the camera position for each test.
-- The two-hop crossover hop is an adaptation of the standard three-hop protocol.
+- The two-hop crossover hop from the original design was dropped: measuring two continuous hops reliably needs more work than a demo timeline allows, so it is not offered.
 - The 90% threshold is a commonly used benchmark and not a biological limit.
 - Video is processed in the browser and is never uploaded or stored. Only derived measurements and landmark data are saved, and they are visible only to the athlete and their linked therapist.
 - The prototype is demonstrated with volunteer or synthetic data. It is not HIPAA-compliant, and compliance review is required before any use with real patients.
@@ -72,7 +72,7 @@ Each leg completes one practice trial and three scored trials per test. Trials a
 
 Each score is capped at 100%.
 
-- **Single hop and crossover hop:** LSI = operated-leg distance ÷ healthy-leg distance × 100.
+- **Single hop:** LSI = operated-leg distance ÷ healthy-leg distance × 100.
 - **Single-leg landing:** a landing quality score from two markers, both measured from the front view and both lower-is-better:
   - Valgus score = (healthy valgus + 5°) ÷ (operated valgus + 5°) × 100
   - Trunk score = (healthy lateral trunk lean + 5°) ÷ (operated lateral trunk lean + 5°) × 100
@@ -104,7 +104,7 @@ An athlete 6 months after ACL surgery:
 - Crossover hop: 410 cm vs 460 cm total gives an LSI of 89.1%.
 - Landing: valgus 11° vs 4° gives a valgus score of 56.3%, and trunk lean 9° vs 6° gives a trunk score of 78.6%. Landing quality = 0.70 × 56.3 + 0.30 × 78.6, which is about 63%.
 - Supporting information: landing knee flexion 65° vs 75° (ratio 86.7%).
-- Status: **Below target criteria**, naming the landing (inward knee collapse). The crossover hop is also in the borderline band. The hop distances alone would have looked close to passing.
+- Status: **Below target criteria**, naming the landing (inward knee collapse). The hop distance alone would have looked close to passing.
 - Trend score: (91.8 + 89.1 + 63.0) ÷ 3, about 81.3%.
 
 ### Parameters (placeholder values to tune with clinician input)
@@ -165,7 +165,7 @@ An athlete 6 months after ACL surgery:
 
 - A laptop with a webcam is enough for development. A GPU is not needed.
 - For real use: a phone or laptop on a stable stand, ideally recording at 60 frames per second, since hops and landings are fast.
-- Floor tape for a start line and a center line (crossover hop), plus a clear, non-slip surface with room for the longest hop.
+- Floor tape for a start line, plus a clear, non-slip surface with room for the longest hop.
 - Two camera positions: side view for the hop tests and front view for the landing test, with the camera kept fixed between legs.
 
 ---
@@ -178,7 +178,7 @@ An athlete 6 months after ACL surgery:
 
 1. Users sign up and log in as an athlete or a physical therapist.
 2. An athlete links to a therapist through an invite code and can revoke access at any time.
-3. The therapist assigns which tests to run (single hop for distance, crossover hop, single-leg landing) and sets the check-in schedule.
+3. The therapist assigns which tests to run (single hop for distance, single-leg landing) and sets the check-in schedule.
 4. Before a hop or landing test, the athlete sees a notice to proceed only if their therapist has cleared them for high-impact work. The notice includes a reminder to warm up, use a clear non-slip surface and stop if there is pain.
 
 #### Setup
@@ -197,7 +197,7 @@ An athlete 6 months after ACL surgery:
 
 #### Measurement
 
-1. For the hop tests, measure hop distance from the toe position at takeoff to the heel position at first stable landing, as a ratio between legs. For the crossover hop, record the total distance of two continuous hops.
+1. For the hop tests, measure hop distance from the toe position at takeoff to the heel position at first stable landing, as a ratio between legs.
 2. For the single-leg landing, measure peak knee valgus and peak lateral trunk lean from the front view.
 3. For the hop tests, record landing knee flexion and forward trunk lean from the side view as supporting information for the therapist.
 

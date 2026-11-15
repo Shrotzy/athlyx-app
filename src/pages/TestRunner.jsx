@@ -42,7 +42,7 @@ import {
   voiceSupported,
 } from '../lib/voice.js';
 import { commandSupport, createVoiceCommands } from '../lib/voice-commands.js';
-import { LEGS, PARAMS, SIDES, TESTS, TEST_META } from '@shared/constants.js';
+import { LEGS, PARAMS, SIDES, TESTS, TEST_LIST, TEST_META } from '@shared/constants.js';
 import { describeVoidReasons, isValidTrial } from '@shared/validation.js';
 
 const TARGET_FPS = PARAMS.preferredFrameRate;
@@ -462,7 +462,7 @@ export default function TestRunner() {
       ? new LandingTrialDetector({ side, fps: TARGET_FPS })
       : new HopTrialDetector({
           side,
-          hops: test === TESTS.CROSSOVER_HOP ? PARAMS.crossoverHops : 1,
+          hops: 1,
           fps: TARGET_FPS,
         });
     framesRef.current = [];
@@ -810,7 +810,7 @@ export default function TestRunner() {
     speak('Attempt discarded. Put both hands on top of your head when you are ready.');
   };
 
-  if (!meta || ![TESTS.SINGLE_HOP, TESTS.CROSSOVER_HOP, TESTS.SINGLE_LEG_LANDING].includes(test)) {
+  if (!meta || !TEST_LIST.includes(test)) {
     return (
       <div className="card">
         <h2>Unknown test</h2>

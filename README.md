@@ -88,7 +88,7 @@ Everything below lives in [`shared/scoring.js`](shared/scoring.js) as pure funct
 
 1. **Measure.** One practice trial and three scored trials per leg, per test. Voided trials are never scored. The median of the valid scored trials is used, and at least three valid trials are required per leg.
 2. **Score each test (0–100%).**
-   - Single hop, crossover hop: `LSI = operated distance ÷ healthy distance × 100`, capped at 100.
+   - Single hop: `LSI = operated distance ÷ healthy distance × 100`, capped at 100.
    - Single-leg landing: `valgus score = (healthy valgus + 5°) ÷ (operated valgus + 5°) × 100`, the same with lateral trunk lean, then `landing quality = 0.70 × valgus + 0.30 × trunk`.
 3. **Supporting observations.** Landing knee flexion and forward trunk lean from the side-view hop landings are shown to the therapist with an operated ÷ healthy ratio. They do not affect the status in v1.
 4. **Criteria status — fixed rules only.**
@@ -98,7 +98,7 @@ Everything below lives in [`shared/scoring.js`](shared/scoring.js) as pure funct
    - *Insufficient data*: too few valid trials or unreliable tracking.
 5. **Trend score.** The average of the three test scores, drawn as a line across sessions. It never decides the status.
 
-Parameters (target 90%, band 85–90%, marker floor 85%, weights 0.70/0.30, 5° buffer, 3 trials minimum, 6 attempts maximum, 2-hop crossover) are documented placeholders and still need clinician sign-off.
+Parameters (target 90%, band 85–90%, marker floor 85%, weights 0.70/0.30, 5° buffer, 3 trials minimum, 6 attempts maximum) are documented placeholders and still need clinician sign-off.
 
 The spec's worked example is a test case: 156 cm vs 170 cm → **91.8%**, 410 cm vs 460 cm → **89.1%**, valgus 11° vs 4° and trunk 9° vs 6° → **62.9% landing quality**, status **below target criteria** naming the landing, trend **81.3%**. See [`tests/scoring.test.js`](tests/scoring.test.js).
 
@@ -215,7 +215,6 @@ The single-leg landing test is different: its detector watches the hip centre dr
 | Test | Camera | Why |
 | --- | --- | --- |
 | Single hop | **Side** | Distance is measured across the image from take-off toe to landing heel |
-| Crossover hop | **Side** | Same, first take-off to final landing |
 | Single-leg landing | **Front** | Valgus is a sideways knee movement; from the side it is invisible |
 
 Facing the camera on a hop test is the most common cause of a hop that "is not detected": the jump travels towards the lens, so the horizontal distance is near zero and the trial is rejected. The runner states the required view on screen while the camera is on, and reports the view it thinks it sees.

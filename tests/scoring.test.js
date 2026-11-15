@@ -40,8 +40,6 @@ function workedExample({ noisy = false } = {}) {
   return [
     ...hops(TESTS.SINGLE_HOP, LEGS.OPERATED, [156, 158, 154], { kneeFlexionDeg: 65, forwardTrunkLeanDeg: 22 }),
     ...hops(TESTS.SINGLE_HOP, LEGS.HEALTHY, [170, 172, 168], { kneeFlexionDeg: 75, forwardTrunkLeanDeg: 20 }),
-    ...hops(TESTS.CROSSOVER_HOP, LEGS.OPERATED, [410, 412, 408]),
-    ...hops(TESTS.CROSSOVER_HOP, LEGS.HEALTHY, [460, 462, 458]),
     ...landings(LEGS.OPERATED, [11, 11, 11], [9, 9, 9]),
     ...landings(LEGS.HEALTHY, [4, 4, 4], [6, 6, 6]),
   ];
@@ -106,8 +104,8 @@ describe('evaluateSession — worked example', () => {
 
   it('scores each test from the median of valid trials', () => {
     expect(results.scores.singleHop).toBe(91.8);
-    expect(results.scores.crossoverHop).toBe(89.1);
     expect(results.scores.landing).toBe(62.9);
+    expect(results.scores.crossoverHop).toBeNull();
   });
 
   it('exposes the landing markers that drove the landing score', () => {
@@ -123,19 +121,20 @@ describe('evaluateSession — worked example', () => {
     expect(results.supporting.forwardTrunkLeanDeg.ratio).toBe(110);
   });
 
-  it('averages the three test scores into the trend score', () => {
-    expect(results.trendScore).toBe(81.3);
+  it('averages the protocol test scores into the trend score', () => {
+    const mean = Math.round(((results.scores.singleHop + results.scores.landing) / 2) * 10) / 10;
+    expect(results.trendScore).toBe(mean);
   });
 
   it('is below target because the landing marker is under its floor', () => {
     expect(results.status).toBe('below');
     expect(results.responsible.some((item) => item.marker === 'valgus')).toBe(true);
-    expect(results.notes.join(' ')).toMatch(/Crossover hop score 89.1%/);
+    expect(results.responsible.map((item) => item.reason).join(' ')).toMatch(/Single-leg landing score 62.9%/);
   });
 });
 
 describe('criteria status rules', () => {
-  const base = { singleHop: 95, crossoverHop: 92, landing: 93, valgusScore: 90, trunkScore: 100 };
+  const base = { singleHop: 95, landing: 93, valgusScore: 90, trunkScore: 100 };
 
   it('meets target when every score is at least 90', () => {
     expect(criteriaStatus(base).status).toBe('meets');
@@ -144,7 +143,7 @@ describe('criteria status rules', () => {
 
   it('is borderline between 85 and 90', () => {
     expect(criteriaStatus({ ...base, singleHop: 89.9 }).status).toBe('borderline');
-    expect(criteriaStatus({ ...base, crossoverHop: 85 }).status).toBe('borderline');
+    expect(criteriaStatus({ ...base, landing: 86 }).status).toBe('borderline');
   });
 
   it('is below target under 85, naming the responsible test', () => {
@@ -164,7 +163,7 @@ describe('criteria status rules', () => {
   });
 
   it('is insufficient data when a score is missing', () => {
-    expect(criteriaStatus({ ...base, crossoverHop: null }).status).toBe('insufficient');
+    expect(criteriaStatus({ ...base, landing: null }).status).toBe('insufficient');
   });
 });
 
@@ -173,8 +172,6 @@ describe('trial handling', () => {
     const trials = [
       ...hops(TESTS.SINGLE_HOP, LEGS.OPERATED, [150, 152]),
       ...hops(TESTS.SINGLE_HOP, LEGS.HEALTHY, [170, 172, 168]),
-      ...hops(TESTS.CROSSOVER_HOP, LEGS.OPERATED, [400, 401, 399]),
-      ...hops(TESTS.CROSSOVER_HOP, LEGS.HEALTHY, [450, 451, 449]),
       ...landings(LEGS.OPERATED, [6, 6, 6], [5, 5, 5]),
       ...landings(LEGS.HEALTHY, [5, 5, 5], [5, 5, 5]),
     ];
@@ -188,8 +185,6 @@ describe('trial handling', () => {
     const trials = [
       ...hops(TESTS.SINGLE_HOP, LEGS.OPERATED, [100, 150, 152, 148]),
       ...hops(TESTS.SINGLE_HOP, LEGS.HEALTHY, [160, 162, 158]),
-      ...hops(TESTS.CROSSOVER_HOP, LEGS.OPERATED, [200, 200, 200]),
-      ...hops(TESTS.CROSSOVER_HOP, LEGS.HEALTHY, [200, 200, 200]),
       ...landings(LEGS.OPERATED, [6, 6, 6], [5, 5, 5]),
       ...landings(LEGS.HEALTHY, [6, 6, 6], [5, 5, 5]),
     ];

@@ -18,7 +18,7 @@ Rules that apply to every test:
 
 1. **One fixed camera position per test.** Hop distance is treated as a ratio between legs, so a constant scale error cancels — but only while the camera does not move. Moving the camera between legs or between sessions is the main way to create a fake asymmetry.
 2. **Whole body in frame, feet included.** The foot landmarks (heel, toe) are what define take-off and landing.
-3. **Stable, non-slip surface, clear runway.** Floor tape for the start line, plus a centre line for the crossover hop.
+3. **Stable, non-slip surface, clear runway.** Floor tape for the start line.
 4. **60 fps where the device allows.** Hops and landings are fast. Below 24 fps the trial is voided; between 24 and 30 fps it is recorded with a warning.
 5. **The athlete is cleared for high-impact work** by their physical therapist. The app repeats this before each test and reminds them to warm up and stop if there is pain.
 

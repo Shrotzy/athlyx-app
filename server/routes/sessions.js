@@ -251,7 +251,6 @@ sessionsRouter.get(
           sessionId: Number(row.id),
           date: row.captured_at,
           singleHop: results.scores?.singleHop ?? null,
-          crossoverHop: results.scores?.crossoverHop ?? null,
           landing: results.scores?.landing ?? null,
           trend: row.trend_score,
           status: row.status,

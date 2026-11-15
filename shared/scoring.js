@@ -17,6 +17,7 @@ import {
   STATUS_LABEL,
   TESTS,
   TEST_META,
+  TEST_LIST,
   HOP_TESTS,
 } from './constants.js';
 import { isValidTrial, normalizeVoidReasons } from './validation.js';
@@ -87,20 +88,14 @@ export function landingQuality({ operatedValgus, healthyValgus, operatedTrunkLea
  * below        any test score < 85, or either marker below the 85 floor
  * insufficient too few valid trials or unreliable tracking
  */
-export function criteriaStatus({
-  singleHop,
-  crossoverHop,
-  landing,
-  valgusScore,
-  trunkScore,
-  noisy = false,
-  missingReasons = [],
-}) {
-  const entries = [
-    { key: TESTS.SINGLE_HOP, label: TEST_META[TESTS.SINGLE_HOP].shortLabel, score: singleHop },
-    { key: TESTS.CROSSOVER_HOP, label: TEST_META[TESTS.CROSSOVER_HOP].shortLabel, score: crossoverHop },
-    { key: TESTS.SINGLE_LEG_LANDING, label: TEST_META[TESTS.SINGLE_LEG_LANDING].shortLabel, score: landing },
-  ];
+export function criteriaStatus({ singleHop, landing, valgusScore, trunkScore, noisy = false, missingReasons = [] }) {
+  // Only the tests in the protocol can hold the status back.
+  const scoreByTest = { [TESTS.SINGLE_HOP]: singleHop, [TESTS.SINGLE_LEG_LANDING]: landing };
+  const entries = TEST_LIST.map((test) => ({
+    key: test,
+    label: TEST_META[test].shortLabel,
+    score: scoreByTest[test],
+  }));
 
   const incomplete =
     entries.some((entry) => !isFiniteNumber(entry.score)) ||
@@ -215,7 +210,7 @@ export function evaluateSession({ trials = [], noisy = false } = {}) {
   const missingReasons = [];
   const tests = {};
 
-  for (const test of [TESTS.SINGLE_HOP, TESTS.CROSSOVER_HOP, TESTS.SINGLE_LEG_LANDING]) {
+  for (const test of TEST_LIST) {
     const meta = TEST_META[test];
     const legs = {};
     for (const leg of LEG_LIST) {
@@ -274,7 +269,8 @@ export function evaluateSession({ trials = [], noisy = false } = {}) {
 
   const scores = {
     singleHop: tests[TESTS.SINGLE_HOP].score,
-    crossoverHop: tests[TESTS.CROSSOVER_HOP].score,
+    // Always null for sessions recorded after the crossover hop was dropped.
+    crossoverHop: tests[TESTS.CROSSOVER_HOP]?.score ?? null,
     landing: tests[TESTS.SINGLE_LEG_LANDING].score,
   };
 
@@ -286,11 +282,13 @@ export function evaluateSession({ trials = [], noisy = false } = {}) {
     missingReasons,
   });
 
-  // The trend score is the average of the three test scores (section 2). It is
-  // shown as a line across sessions and never decides the criteria status.
-  const trendValues = [scores.singleHop, scores.crossoverHop, scores.landing].filter(isFiniteNumber);
+  // The trend score is the average of the protocol's test scores. It is shown as
+  // a line across sessions and never decides the criteria status.
+  const trendValues = [scores.singleHop, scores.landing].filter(isFiniteNumber);
   const trendScore =
-    trendValues.length === 3 ? round(trendValues.reduce((sum, value) => sum + value, 0) / 3) : null;
+    trendValues.length === TEST_LIST.length
+      ? round(trendValues.reduce((sum, value) => sum + value, 0) / trendValues.length)
+      : null;
 
   return {
     protocol: {
@@ -300,7 +298,6 @@ export function evaluateSession({ trials = [], noisy = false } = {}) {
       landingWeights: [PARAMS.valgusWeight, PARAMS.trunkWeight],
       buffer: PARAMS.lowerIsBetterBuffer,
       minValidTrials: PARAMS.minValidTrials,
-      crossoverHops: PARAMS.crossoverHops,
     },
     tests,
     scores,

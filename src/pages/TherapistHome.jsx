@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 
 import { Disclaimer, ErrorBanner, Loading, StatusBadge, formatDate } from '../components/common.jsx';
 import { api } from '../lib/api.js';
-import { TEST_META } from '@shared/constants.js';
+import { TEST_META, protocolTests } from '@shared/constants.js';
 
 export default function TherapistHome() {
   const [athletes, setAthletes] = useState([]);
@@ -151,7 +151,9 @@ export default function TherapistHome() {
 
                 {athlete.assignment && (
                   <p className="small muted" style={{ margin: 0 }}>
-                    Assigned: {athlete.assignment.tests.map((test) => TEST_META[test]?.shortLabel || test).join(', ')}
+                    Assigned: {protocolTests(athlete.assignment.tests)
+                      .map((test) => TEST_META[test]?.shortLabel || test)
+                      .join(', ')}
                   </p>
                 )}
 

@@ -5,7 +5,7 @@ import { Disclaimer, ErrorBanner, Loading, SafetyNotice, formatDate } from '../c
 import { api } from '../lib/api.js';
 import { useAuth } from '../lib/auth.jsx';
 import { clearDraft, draftOverview, loadDraft, startDraft } from '../lib/draft.js';
-import { LEGS, TEST_META } from '@shared/constants.js';
+import { LEGS, TEST_META, protocolTests } from '@shared/constants.js';
 
 function ScoreLine({ label, value }) {
   const shown = value == null ? '—' : `${value}%`;
@@ -57,7 +57,7 @@ export default function AthleteHome() {
       navigate('/athlete/check-in');
       return;
     }
-    const tests = assignment?.tests?.length ? assignment.tests : undefined;
+    const tests = assignment?.tests?.length ? protocolTests(assignment.tests) : undefined;
     const next = startDraft({ assignmentId: assignment?.id ?? null, tests, operatedLeg: user?.operatedLeg });
     setDraft(next);
     navigate('/athlete/check-in');
@@ -78,7 +78,9 @@ export default function AthleteHome() {
           <h1>Hello, {user.name.split(' ')[0]}</h1>
           <p className="muted" style={{ margin: 0 }}>
             {assignment
-              ? `Assigned: ${assignment.tests.map((test) => TEST_META[test]?.shortLabel || test).join(', ')}`
+              ? `Assigned: ${protocolTests(assignment.tests)
+                  .map((test) => TEST_META[test]?.shortLabel || test)
+                  .join(', ')}`
               : 'No test assignment yet. Your physical therapist assigns which tests to run.'}
           </p>
         </div>
@@ -220,7 +222,6 @@ export default function AthleteHome() {
                 </div>
                 <ul className="list-reset small" style={{ marginTop: '0.4rem' }}>
                   <ScoreLine label="Single hop" value={session.scores?.singleHop} />
-                  <ScoreLine label="Crossover hop" value={session.scores?.crossoverHop} />
                   <ScoreLine label="Single-leg landing" value={session.scores?.landing} />
                 </ul>
               </div>

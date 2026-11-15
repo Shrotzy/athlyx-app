@@ -5,7 +5,7 @@ import { Disclaimer, ErrorBanner, Loading, StatusBadge, formatDate } from '../co
 import TrendChart from '../components/TrendChart.jsx';
 import { api } from '../lib/api.js';
 import { addDays } from '../lib/dates.js';
-import { TEST_LIST, TEST_META } from '@shared/constants.js';
+import { TEST_LIST, TEST_META, protocolTests } from '@shared/constants.js';
 
 export default function AthleteDetail() {
   const { id } = useParams();
@@ -56,7 +56,7 @@ export default function AthleteDetail() {
   useEffect(() => {
     if (assignment) {
       setForm({
-        tests: assignment.tests,
+        tests: protocolTests(assignment.tests),
         cadenceDays: assignment.cadenceDays,
         nextCheckIn: assignment.nextCheckIn || addDays(assignment.cadenceDays),
         note: assignment.note || '',
@@ -201,7 +201,6 @@ export default function AthleteDetail() {
               <tr>
                 <th>Date</th>
                 <th>Single hop</th>
-                <th>Crossover</th>
                 <th>Landing</th>
                 <th>Trend</th>
                 <th>Status</th>
@@ -213,7 +212,6 @@ export default function AthleteDetail() {
                 <tr key={session.id}>
                   <td>{formatDate(session.capturedAt)}</td>
                   <td className="mono">{session.scores?.singleHop ?? '—'}%</td>
-                  <td className="mono">{session.scores?.crossoverHop ?? '—'}%</td>
                   <td className="mono">{session.scores?.landing ?? '—'}%</td>
                   <td className="mono">{session.trendScore ?? '—'}%</td>
                   <td>

@@ -148,7 +148,6 @@ insightsRouter.post(
         [
           `Previous check-in on ${previousRow.captured_at}: status ${STATUS_LABEL[previous.status] || previous.status}.`,
           `Change in single hop LSI: ${delta(results.scores?.singleHop, previous.scores?.singleHop)} points.`,
-          `Change in crossover hop LSI: ${delta(results.scores?.crossoverHop, previous.scores?.crossoverHop)} points.`,
           `Change in landing quality: ${delta(results.scores?.landing, previous.scores?.landing)} points.`,
         ].join(' '),
       );

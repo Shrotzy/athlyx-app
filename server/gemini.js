@@ -29,7 +29,6 @@ export function buildFacts(results) {
   const lines = [
     `Status: ${STATUS_LABEL[results.status] || results.status}`,
     `Single hop LSI: ${score(results.scores?.singleHop)}`,
-    `Crossover hop LSI: ${score(results.scores?.crossoverHop)}`,
     `Single-leg landing quality: ${score(results.scores?.landing)}`,
   ];
 

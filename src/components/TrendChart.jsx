@@ -26,7 +26,6 @@ export default function TrendChart({ points = [], showStatus = false }) {
     date: new Date(point.date).toLocaleDateString(undefined, { day: 'numeric', month: 'short' }),
     trend: point.trend,
     singleHop: point.singleHop,
-    crossoverHop: point.crossoverHop,
     landing: point.landing,
     status: point.status,
   }));
@@ -46,13 +45,12 @@ export default function TrendChart({ points = [], showStatus = false }) {
           <ReferenceLine y={PARAMS.targetScore} stroke="#5eead4" strokeDasharray="4 4" />
           <Line type="monotone" dataKey="trend" name="Trend score" stroke="#a78bfa" strokeWidth={2.5} dot />
           <Line type="monotone" dataKey="singleHop" name="Single hop" stroke="#38bdf8" dot />
-          <Line type="monotone" dataKey="crossoverHop" name="Crossover hop" stroke="#fbbf24" dot />
           <Line type="monotone" dataKey="landing" name="Landing quality" stroke="#f472b6" dot />
         </LineChart>
       </ResponsiveContainer>
       {showStatus && (
         <p className="muted small">
-          The trend line averages the three test scores. It never decides the criteria status.
+          The trend line averages the test scores. It never decides the criteria status.
         </p>
       )}
     </div>

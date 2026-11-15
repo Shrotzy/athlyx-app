@@ -116,7 +116,7 @@ function syntheticLandmarks(test, progress) {
   return { points: LANDMARK_POINTS, fps, frames };
 }
 
-function makeTrials({ singleHop, crossoverHop, operatedValgus, healthyValgus, operatedTrunk, healthyTrunk }) {
+function makeTrials({ singleHop, operatedValgus, healthyValgus, operatedTrunk, healthyTrunk }) {
   const trials = [];
   const triple = (value) => [value, value + 2, value - 2];
 
@@ -142,30 +142,6 @@ function makeTrials({ singleHop, crossoverHop, operatedValgus, healthyValgus, op
       metrics: { hopDistanceCm: distance, kneeFlexionDeg: 74, forwardTrunkLeanDeg: 21 },
       landmarks: syntheticLandmarks(TESTS.SINGLE_HOP, 1),
       durationMs: 1400,
-    });
-  }
-  for (const distance of triple(crossoverHop.operated)) {
-    trials.push({
-      test: TESTS.CROSSOVER_HOP,
-      leg: LEGS.OPERATED,
-      trialNo: trials.filter((t) => t.test === TESTS.CROSSOVER_HOP && t.leg === LEGS.OPERATED).length + 1,
-      valid: true,
-      voidReasons: [],
-      metrics: { hopDistanceCm: distance, kneeFlexionDeg: 64, forwardTrunkLeanDeg: 24 },
-      landmarks: syntheticLandmarks(TESTS.CROSSOVER_HOP, 2),
-      durationMs: 2100,
-    });
-  }
-  for (const distance of triple(crossoverHop.healthy)) {
-    trials.push({
-      test: TESTS.CROSSOVER_HOP,
-      leg: LEGS.HEALTHY,
-      trialNo: trials.filter((t) => t.test === TESTS.CROSSOVER_HOP && t.leg === LEGS.HEALTHY).length + 1,
-      valid: true,
-      voidReasons: [],
-      metrics: { hopDistanceCm: distance, kneeFlexionDeg: 73, forwardTrunkLeanDeg: 21 },
-      landmarks: syntheticLandmarks(TESTS.CROSSOVER_HOP, 2),
-      durationMs: 2100,
     });
   }
   for (const [leg, valgus, trunk] of [
@@ -283,7 +259,7 @@ async function seed() {
        VALUES (?, ?, ?, ?, ?, ?)`,
       athleteId,
       therapistId,
-      JSON.stringify([TESTS.SINGLE_HOP, TESTS.CROSSOVER_HOP, TESTS.SINGLE_LEG_LANDING]),
+      JSON.stringify([TESTS.SINGLE_HOP, TESTS.SINGLE_LEG_LANDING]),
       14,
       daysAhead(5),
       'Cleared for hop testing. Repeat every two weeks until the next review.',
@@ -295,7 +271,6 @@ async function seed() {
       days: 42,
       trials: makeTrials({
         singleHop: { operated: 145, healthy: 168 },
-        crossoverHop: { operated: 380, healthy: 450 },
         operatedValgus: 12,
         healthyValgus: 5,
         operatedTrunk: 10,
@@ -306,7 +281,6 @@ async function seed() {
       days: 28,
       trials: makeTrials({
         singleHop: { operated: 156, healthy: 170 },
-        crossoverHop: { operated: 410, healthy: 460 },
         operatedValgus: 9,
         healthyValgus: 5,
         operatedTrunk: 8,
@@ -317,7 +291,6 @@ async function seed() {
       days: 14,
       trials: makeTrials({
         singleHop: { operated: 165, healthy: 172 },
-        crossoverHop: { operated: 440, healthy: 460 },
         operatedValgus: 6,
         healthyValgus: 5,
         operatedTrunk: 7,

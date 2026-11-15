@@ -57,7 +57,7 @@ describe('progressFor', () => {
     ]);
     expect(progressFor(draft, 'single-hop', 'operated').complete).toBe(true);
     expect(progressFor(draft, 'single-hop', 'healthy').complete).toBe(false);
-    expect(progressFor(draft, 'crossover-hop', 'operated').complete).toBe(false);
+    expect(progressFor(draft, 'single-leg-landing', 'operated').complete).toBe(false);
   });
 });
 

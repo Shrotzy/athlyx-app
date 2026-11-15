@@ -5,7 +5,7 @@ import { Disclaimer, ErrorBanner, SafetyNotice } from '../components/common.jsx'
 import { api } from '../lib/api.js';
 import { useAuth } from '../lib/auth.jsx';
 import { clearDraft, draftOverview, loadDraft, startDraft } from '../lib/draft.js';
-import { LEGS, PARAMS, TEST_LIST, TEST_META } from '@shared/constants.js';
+import { LEGS, PARAMS, TEST_LIST, TEST_META, protocolTests } from '@shared/constants.js';
 
 export default function CheckIn() {
   const { user } = useAuth();
@@ -29,8 +29,11 @@ export default function CheckIn() {
   if (!draft) return null;
 
   const overview = draftOverview(draft);
-  const sideTests = draft.tests.filter((test) => TEST_META[test].cameraView === 'side');
-  const frontTests = draft.tests.filter((test) => TEST_META[test].cameraView === 'front');
+  // Drafts and assignments made before the crossover hop was dropped may still
+  // name it, so the list is filtered rather than trusted.
+  const tests = protocolTests(draft.tests);
+  const sideTests = tests.filter((test) => TEST_META[test].cameraView === 'side');
+  const frontTests = tests.filter((test) => TEST_META[test].cameraView === 'front');
 
   const submit = async () => {
     setSubmitting(true);
@@ -82,8 +85,7 @@ export default function CheckIn() {
         <ul className="list-reset small muted">
           <li>Warm up first, use a clear non-slip surface and stop if you feel pain.</li>
           <li>
-            Mark a start line on the floor{sideTests.length > 0 ? '' : ' (not needed for the landing test)'} and a
-            centre line for the crossover hop.
+            Mark a start line on the floor{sideTests.length > 0 ? '' : ' (not needed for the landing test)'}.
           </li>
           <li>Prop the camera on a stable stand. Side view for the hop tests, front view for the landing test.</li>
           <li>Keep the camera in exactly the same place for both legs and every trial.</li>

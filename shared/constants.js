@@ -12,9 +12,22 @@ export const TESTS = {
   SINGLE_LEG_LANDING: 'single-leg-landing',
 };
 
-export const HOP_TESTS = [TESTS.SINGLE_HOP, TESTS.CROSSOVER_HOP];
+// The crossover (2 continuous hops) test was dropped from the protocol: its
+// distance accuracy needs more work than the demo timeline allows. The constant
+// and its TEST_META entry stay so sessions already saved still render.
+export const HOP_TESTS = [TESTS.SINGLE_HOP];
 
-export const TEST_LIST = [TESTS.SINGLE_HOP, TESTS.CROSSOVER_HOP, TESTS.SINGLE_LEG_LANDING];
+export const TEST_LIST = [TESTS.SINGLE_HOP, TESTS.SINGLE_LEG_LANDING];
+
+/**
+ * The tests actually in the protocol, from an assignment or a stored draft.
+ * Old assignments still name the crossover hop, so every surface filters
+ * through this rather than trusting the stored list.
+ */
+export function protocolTests(tests) {
+  const list = Array.isArray(tests) && tests.length ? tests : TEST_LIST;
+  return list.filter((test) => TEST_LIST.includes(test));
+}
 
 export const TEST_META = {
   [TESTS.SINGLE_HOP]: {
@@ -28,6 +41,7 @@ export const TEST_META = {
       'Hop forward as far as you can on one leg, land on the same leg and hold still until the trial is saved.',
     trialsPerLeg: 4, // 1 practice + 3 scored
   },
+  // Not part of the protocol any more — kept so stored sessions still render.
   [TESTS.CROSSOVER_HOP]: {
     label: 'Crossover hop (2 continuous hops)',
     shortLabel: 'Crossover hop',
