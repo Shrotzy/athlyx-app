@@ -1,45 +1,57 @@
 import { describe, expect, it } from 'vitest';
 
 import { createHoldGate } from '../src/lib/gesture-gate.js';
-import { handsAboveHead } from '../src/lib/pose-raised.js';
+import { handsOnHead } from '../src/lib/start-pose.js';
 import { parseCommand } from '../src/lib/voice-commands.js';
 import { AFFIRMATIONS, affirmationFor } from '../src/lib/voice.js';
 
 const point = (x, y, visible = true) => ({ x, y, v: visible ? 1 : 0.1, visible });
 
-const armsUp = {
-  nose: point(0.5, 0.18),
+const handsOnHeadPoints = {
+  nose: point(0.5, 0.2),
   leftShoulder: point(0.42, 0.3),
   rightShoulder: point(0.58, 0.3),
-  leftWrist: point(0.34, 0.04),
-  rightWrist: point(0.66, 0.04),
+  leftWrist: point(0.42, 0.16),
+  rightWrist: point(0.58, 0.16),
 };
 
-describe('handsAboveHead (the start position)', () => {
-  it('needs both hands above the head', () => {
-    expect(handsAboveHead(armsUp)).toMatchObject({ both: true, left: true, right: true });
+describe('handsOnHead (the start position)', () => {
+  it('fires with both hands resting on the head', () => {
+    expect(handsOnHead(handsOnHeadPoints)).toMatchObject({ both: true, left: true, right: true });
   });
 
-  it('does not start on one hand alone', () => {
-    const oneHand = { ...armsUp, leftWrist: point(0.38, 0.55) };
-    expect(handsAboveHead(oneHand)).toMatchObject({ both: false, left: false, right: true });
+  it('needs both hands, so one hand cannot start a trial', () => {
+    const oneHand = { ...handsOnHeadPoints, rightWrist: point(0.62, 0.62) };
+    expect(handsOnHead(oneHand)).toMatchObject({ both: false, left: true, right: false });
   });
 
-  it('rejects hands that are only at shoulder height', () => {
-    const points = { ...armsUp, leftWrist: point(0.34, 0.28), rightWrist: point(0.66, 0.28) };
-    expect(handsAboveHead(points).both).toBe(false);
+  it('rejects arms held straight up, which is what left the frame', () => {
+    const overhead = { ...handsOnHeadPoints, leftWrist: point(0.42, 0.02), rightWrist: point(0.58, 0.02) };
+    expect(handsOnHead(overhead).both).toBe(false);
   });
 
-  it('falls back to the shoulder when the head is not visible', () => {
-    const points = { ...armsUp, nose: point(0.5, 0.18, false) };
-    expect(handsAboveHead(points).both).toBe(true);
+  it('rejects hands at chest height or down by the sides', () => {
+    expect(handsOnHead({ ...handsOnHeadPoints, leftWrist: point(0.42, 0.42), rightWrist: point(0.58, 0.42) }).both).toBe(
+      false,
+    );
+    expect(handsOnHead({ ...handsOnHeadPoints, leftWrist: point(0.4, 0.66), rightWrist: point(0.6, 0.66) }).both).toBe(
+      false,
+    );
+  });
+
+  it('falls back to the shoulders when the face is not visible', () => {
+    expect(handsOnHead({ ...handsOnHeadPoints, nose: point(0.5, 0.2, false) }).both).toBe(true);
   });
 
   it('does nothing without usable landmarks', () => {
-    expect(handsAboveHead(null).both).toBe(false);
-    expect(handsAboveHead({}).both).toBe(false);
+    expect(handsOnHead(null).both).toBe(false);
+    expect(handsOnHead({}).both).toBe(false);
     expect(
-      handsAboveHead({ ...armsUp, leftWrist: point(0.34, 0.04, false), rightWrist: point(0.66, 0.04, false) }).both,
+      handsOnHead({
+        ...handsOnHeadPoints,
+        leftWrist: point(0.42, 0.16, false),
+        rightWrist: point(0.58, 0.16, false),
+      }).both,
     ).toBe(false);
   });
 });

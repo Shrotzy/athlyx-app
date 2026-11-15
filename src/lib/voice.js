@@ -201,8 +201,8 @@ export function affirmationFor(index) {
 /** Spoken versions of the on-screen cue text. Kept together so they never drift. */
 export const CUES = {
   cameraOn:
-    'Camera on. Stand back until your feet are in frame, then raise both hands above your head when you are ready.',
-  readyToGo: 'Ready to go? Raise both hands above your head.',
+    'Camera on. Stand back until your feet are in frame, then put both hands on top of your head when you are ready.',
+  readyToGo: 'Ready to go? Put both hands on top of your head.',
   readyToGoAuto: 'Ready to go. Starting in three, two, one.',
   practiceIntro: 'This first one is your practice trial. It is not scored.',
   practiceDone: 'Nice. That is the practice trial done. Three scored trials to go.',

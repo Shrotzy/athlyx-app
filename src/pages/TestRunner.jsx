@@ -14,7 +14,7 @@ import {
   createFpsMeter,
   createPoseLandmarker,
   describeCameraError,
-  handsAboveHead,
+  handsOnHead,
   namedPoints,
   startCamera,
   stopCamera,
@@ -57,12 +57,12 @@ const SIGNAL_MODES = [
 ];
 
 const SIGNAL_DETAIL = {
-  pose: 'Raise both hands above your head',
+  pose: 'Put both hands on top of your head',
   auto: 'Starts automatically',
 };
 
 const SIGNAL_STATUS = {
-  pose: 'Raise both hands straight above your head, hold for a moment, then lower them and start moving.',
+  pose: 'Put both hands flat on top of your head, hold for a moment, then lower them and start moving. Hands at head height stay inside the frame, however long your arms are.',
   auto: 'A spoken 3-2-1 starts each trial. Nothing to press, nothing to raise.',
 };
 
@@ -468,8 +468,8 @@ export default function TestRunner() {
 
         // Waiting for the raised hand.
         if (!recordingRef.current && readyRef.current && signalRef.current === 'pose') {
-          const raised = handsAboveHead(named);
-          const verdict = triggerGateRef.current.update(raised.both, now);
+          const headPose = handsOnHead(named);
+          const verdict = triggerGateRef.current.update(headPose.both, now);
           setHoldProgress(verdict.progress);
           if (verdict.fired) {
             arm(false);
@@ -658,7 +658,7 @@ export default function TestRunner() {
     autoStartedRef.current = false;
 
     if (next === 'pose') {
-      speak('Start by raising both hands above your head.');
+      speak('Start by putting both hands on top of your head.');
       setCue({ text: 'READY', detail: SIGNAL_DETAIL.pose, tone: 'info' });
       if (phase === 'live') arm(true);
     } else {
@@ -866,7 +866,7 @@ export default function TestRunner() {
                   <strong>Each trial:</strong> {movementInstruction} Hold for {HOLD_SECONDS} seconds.
                 </li>
                 <li>
-                  <strong>Start each trial</strong> by raising both hands above your head, or let the countdown start
+                  <strong>Start each trial</strong> by putting both hands on top of your head, or let the countdown start
                   it. You can also press space.
                 </li>
               </ol>
