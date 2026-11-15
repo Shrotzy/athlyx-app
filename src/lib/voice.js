@@ -201,8 +201,9 @@ export function affirmationFor(index) {
 /** Spoken versions of the on-screen cue text. Kept together so they never drift. */
 export const CUES = {
   cameraOn:
-    'Camera on. Stand back until your feet are in frame, then put both hands on top of your head when you are ready.',
+    'Camera on. Stand back until your feet are in frame, then hold the start position when you are ready.',
   readyToGo: 'Ready to go? Put both hands on top of your head.',
+  readyTpose: 'Ready to go? Hold both arms straight out to the sides.',
   readyToGoAuto: 'Ready to go. Starting in three, two, one.',
   practiceIntro: 'This first one is your practice trial. It is not scored.',
   practiceDone: 'Nice. That is the practice trial done. Three scored trials to go.',
@@ -216,6 +217,6 @@ export const CUES = {
   rest: (seconds) => `Rest for ${seconds} seconds.`,
   legComplete: 'That is this leg done. Good work. Head back to the check-in for the next test.',
   stepBack: 'Step back so your feet are in frame.',
-  tryAgainWhenReady: 'Take your time. When you are ready, put both hands on top of your head.',
+  tryAgainWhenReady: 'Take your time. When you are ready, show the start position again.',
   attemptsUsed: `That is all the attempts for this leg, and it still needs three valid trials. Start this leg again when you are ready.`,
 };

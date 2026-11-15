@@ -21,6 +21,7 @@ import {
   cameraSupport,
   createFpsMeter,
   createPoseLandmarker,
+  armsOutToSides,
   describeCameraError,
   handsOnHead,
   namedPoints,
@@ -60,16 +61,20 @@ const SIGNAL_KEY = 'athlyx.signal';
  * there is nothing extra to download and nothing to get wrong in poor light.
  */
 const SIGNAL_MODES = [
-  ['pose', '🙋 hand above head'],
+  ['tpose', '🙆 T pose'],
+  ['pose', '🙋 hands on head'],
   ['auto', '⏱ automatic'],
 ];
 
 const SIGNAL_DETAIL = {
+  tpose: 'Hold both arms straight out to the sides',
   pose: 'Put both hands on top of your head',
   auto: 'Starts automatically',
 };
 
 const SIGNAL_STATUS = {
+  tpose:
+    'Hold both arms straight out to the sides at shoulder height for a moment, then lower them and start. Best straight-on to the camera; from the side one arm is hidden.',
   pose: 'Put both hands flat on top of your head, hold for a moment, then lower them and start moving. Hands at head height stay inside the frame, however long your arms are.',
   auto: 'A spoken 3-2-1 starts each trial. Nothing to press, nothing to raise.',
 };
@@ -95,7 +100,7 @@ function writeFlag(key, value) {
 function readSignal() {
   try {
     const stored = localStorage.getItem(SIGNAL_KEY);
-    return ['pose', 'auto'].includes(stored) ? stored : 'pose';
+    return ['tpose', 'pose', 'auto'].includes(stored) ? stored : 'tpose';
   } catch {
     return 'pose';
   }
@@ -127,6 +132,11 @@ function bigCueFor(phaseName, isLanding) {
     default:
       return null;
   }
+}
+
+/** The spoken prompt for the chosen start signal. */
+function readyPrompt(mode) {
+  return mode === 'tpose' ? CUES.readyTpose : CUES.readyToGo;
 }
 
 /** One line that says exactly what is left to do on this leg. */
@@ -189,6 +199,7 @@ export default function TestRunner() {
   const [restDetail, setRestDetail] = useState('');
   const [cue, setCue] = useState(null);
   const [holdProgress, setHoldProgress] = useState(0);
+  const [handsSeen, setHandsSeen] = useState({ left: false, right: false });
   const [voiceOn, setVoiceOn] = useState(() => !voiceMuted() && voiceSupported());
   const [signal, setSignal] = useState(readSignal);
   const [voiceCommandsOn, setVoiceCommandsOn] = useState(() => readFlag(VOICE_COMMANDS_KEY, false));
@@ -325,7 +336,7 @@ export default function TestRunner() {
         arm(true);
         setCue({ text: 'READY', detail: SIGNAL_DETAIL.pose, tone: 'info' });
         chime('ready');
-        speak(voided ? CUES.tryAgainWhenReady : CUES.readyToGo);
+        speak(voided ? CUES.tryAgainWhenReady : readyPrompt(signalRef.current));
       }, 1000);
     },
     [arm, clearRest],
@@ -420,11 +431,14 @@ export default function TestRunner() {
     finalizeRef.current = finalizeTrial;
   }, [finalizeTrial]);
 
-  const startTrial = () => {
+  const startTrial = (force = false) => {
     if (recordingRef.current) return;
-    if (phase !== 'live' || progress?.complete) return;
+    if (phase !== 'live' || progress?.complete || progress?.exhausted) return;
 
-    if (!bodyCheckRef.current.ok) {
+    // A button press or the space bar is an explicit "start anyway": the athlete
+    // may be framed without their feet showing, and refusing outright left them
+    // with a dead button and no way to try.
+    if (!force && !bodyCheckRef.current.ok) {
       speak(CUES.stepBack);
       setCue({
         text: 'STEP BACK',
@@ -494,14 +508,25 @@ export default function TestRunner() {
         const measuredFps = fpsMeterRef.current.push(now);
         if (measuredFps > 0) setFps(Math.round(measuredFps));
 
-        // Waiting for the raised hand.
-        if (!recordingRef.current && readyRef.current && signalRef.current === 'pose') {
-          const headPose = handsOnHead(named);
-          const verdict = triggerGateRef.current.update(headPose.both, now);
-          setHoldProgress(verdict.progress);
-          if (verdict.fired) {
-            arm(false);
-            startTrialRef.current?.();
+        // Waiting for the start position. The same two helpers feed both the
+        // chosen signal and the on-screen diagnostic.
+        if (!recordingRef.current && readyRef.current) {
+          const onHead = handsOnHead(named);
+          const tPose = armsOutToSides(named);
+          const mode = signalRef.current;
+          const active = mode === 'tpose' ? tPose.both : mode === 'pose' ? onHead.both : false;
+
+          if (now - lastOverlayRef.current <= 80) {
+            setHandsSeen({ left: onHead.left || tPose.left, right: onHead.right || tPose.right });
+          }
+
+          if (mode !== 'auto') {
+            const verdict = triggerGateRef.current.update(active, now);
+            setHoldProgress(verdict.progress);
+            if (verdict.fired) {
+              arm(false);
+              startTrialRef.current?.();
+            }
           }
         }
 
@@ -600,11 +625,11 @@ export default function TestRunner() {
       autoStartedRef.current = false;
       loop();
 
-      if (signal === 'pose') {
+      if (signal !== 'auto') {
         arm(true);
-        setCue({ text: 'READY', detail: SIGNAL_DETAIL.pose, tone: 'info' });
+        setCue({ text: 'READY', detail: SIGNAL_DETAIL[signal], tone: 'info' });
         chime('ready');
-        speak(`${CUES.cameraOn} ${CUES.readyToGo}`);
+        speak(`${CUES.cameraOn} ${readyPrompt(signal)}`);
       } else {
         setCue({ text: 'GET SET', detail: 'Starting automatically once you are in frame', tone: 'info' });
         speak(CUES.cameraOn);
@@ -685,9 +710,9 @@ export default function TestRunner() {
     setHoldProgress(0);
     autoStartedRef.current = false;
 
-    if (next === 'pose') {
-      speak('Start by putting both hands on top of your head.');
-      setCue({ text: 'READY', detail: SIGNAL_DETAIL.pose, tone: 'info' });
+    if (next !== 'auto') {
+      speak(next === 'tpose' ? 'T pose. Hold both arms out to the sides.' : 'Start with both hands on top of your head.');
+      setCue({ text: 'READY', detail: SIGNAL_DETAIL[next], tone: 'info' });
       if (phase === 'live') arm(true);
     } else {
       speak('Automatic start. A three, two, one countdown starts each trial.');
@@ -748,11 +773,20 @@ export default function TestRunner() {
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || tag === 'BUTTON') return;
       if (phase !== 'live') return;
       event.preventDefault();
-      startTrialRef.current?.();
+      startTrialRef.current?.(true);
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [phase]);
+
+  // A "step back" message must not stay on screen after the athlete has stepped
+  // back: a stale warning looks exactly like a frozen tracker.
+  useEffect(() => {
+    if (phase !== 'live' || recording || !bodyCheck.ok) return;
+    setCue((current) =>
+      current.text === 'STEP BACK' ? { text: 'READY', detail: SIGNAL_DETAIL[signal], tone: 'info' } : current,
+    );
+  }, [bodyCheck.ok, phase, recording, signal]);
 
   /** Recovery paths: a leg that used its attempts, and a mis-started attempt. */
   const startLegOver = () => {
@@ -800,8 +834,9 @@ export default function TestRunner() {
   );
   const lastDistances = validTrials.map((trial) => trial.metrics?.hopDistanceCm);
   const lowFps = fps > 0 && fps < PARAMS.minFrameRate;
-  const canStart =
-    phase === 'live' && !recording && bodyCheck.ok && !progress?.complete && !progress?.exhausted;
+  // Deliberately not gated on body framing: a missing foot must not leave the
+  // athlete with a button that cannot be pressed.
+  const canStart = phase === 'live' && !recording && !progress?.complete && !progress?.exhausted;
 
   const audioNote = !audio.supported
     ? 'This browser cannot speak. Every cue is also written on screen.'
@@ -1042,6 +1077,13 @@ export default function TestRunner() {
           <p className="muted small" style={{ margin: 0 }}>
             {SIGNAL_STATUS[signal]} {remainingText(progress)}.
           </p>
+          {/* Says exactly what the tracker sees, so "it does not work" becomes a
+              specific, fixable thing. */}
+          <p className="muted small" style={{ margin: 0 }}>
+            pose {points ? 'found' : 'not found'} · hands {handsSeen.left ? 'left ✓' : 'left ✗'}{' '}
+            {handsSeen.right ? 'right ✓' : 'right ✗'} · trigger {Math.round(holdProgress * 100)}% ·{' '}
+            {bodyCheck.ok ? 'body in frame' : `missing ${bodyCheck.missing.join(', ')}`} · {fps || '—'} fps
+          </p>
           {audioNote ? (
             <p className="muted small hud-warn" style={{ margin: 0 }}>
               {audioNote}
@@ -1052,7 +1094,7 @@ export default function TestRunner() {
 
       <div className="row between">
         <div className="row">
-          <button className="button" type="button" onClick={() => startTrial()} disabled={!canStart}>
+          <button className="button" type="button" onClick={() => startTrial(true)} disabled={!canStart}>
             {progress?.practice === false ? 'Start practice trial' : 'Start trial'}
           </button>
           <span className="muted small">or press space</span>
@@ -1110,7 +1152,7 @@ export default function TestRunner() {
             </p>
           )}
           <div className="row">
-            <button className="button" type="button" onClick={() => startTrial()} disabled={!canStart}>
+            <button className="button" type="button" onClick={() => startTrial(true)} disabled={!canStart}>
               {progress?.complete ? 'Leg complete' : 'Next trial now'}
             </button>
             {!captured.valid && (

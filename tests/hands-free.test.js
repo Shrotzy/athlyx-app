@@ -1,11 +1,18 @@
 import { describe, expect, it } from 'vitest';
 
 import { createHoldGate } from '../src/lib/gesture-gate.js';
-import { handsOnHead } from '../src/lib/start-pose.js';
+import { armsOutToSides, handsOnHead } from '../src/lib/start-pose.js';
 import { parseCommand } from '../src/lib/voice-commands.js';
 import { AFFIRMATIONS, affirmationFor } from '../src/lib/voice.js';
 
 const point = (x, y, visible = true) => ({ x, y, v: visible ? 1 : 0.1, visible });
+
+const tPosePoints = {
+  leftShoulder: point(0.4, 0.3),
+  rightShoulder: point(0.6, 0.3),
+  leftWrist: point(0.18, 0.31),
+  rightWrist: point(0.82, 0.31),
+};
 
 const handsOnHeadPoints = {
   nose: point(0.5, 0.2),
@@ -53,6 +60,37 @@ describe('handsOnHead (the start position)', () => {
         rightWrist: point(0.58, 0.16, false),
       }).both,
     ).toBe(false);
+  });
+});
+
+describe('armsOutToSides (T pose)', () => {
+  it('fires with both arms level and out to the sides', () => {
+    expect(armsOutToSides(tPosePoints)).toMatchObject({ both: true, left: true, right: true });
+  });
+
+  it('needs both arms — one arm down is not a T pose', () => {
+    expect(armsOutToSides({ ...tPosePoints, rightWrist: point(0.62, 0.62) })).toMatchObject({
+      both: false,
+      left: true,
+      right: false,
+    });
+  });
+
+  it('rejects arms that hang down by the sides', () => {
+    expect(armsOutToSides({ ...tPosePoints, leftWrist: point(0.38, 0.62), rightWrist: point(0.62, 0.62) }).both).toBe(
+      false,
+    );
+  });
+
+  it('rejects arms raised above the shoulders', () => {
+    expect(armsOutToSides({ ...tPosePoints, leftWrist: point(0.3, 0.05), rightWrist: point(0.7, 0.05) }).both).toBe(
+      false,
+    );
+  });
+
+  it('does nothing without usable landmarks', () => {
+    expect(armsOutToSides(null).both).toBe(false);
+    expect(armsOutToSides({}).both).toBe(false);
   });
 });
 
