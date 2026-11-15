@@ -257,7 +257,7 @@ export function namedPoints(landmarks) {
 }
 
 // Re-exported from a dependency-free module so it is unit testable in Node.
-export { handsRaised } from './pose-raised.js';
+export { handAboveHead } from './pose-raised.js';
 
 /** Is the whole body (head to feet) in frame right now? */
 export function bodyInFrame(points) {

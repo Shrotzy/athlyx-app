@@ -1,132 +1,104 @@
 import { describe, expect, it } from 'vitest';
 
-import { createGestureGate, createHoldGate, START_GESTURES } from '../src/lib/gesture-gate.js';
-import { handsRaised } from '../src/lib/pose-raised.js';
+import { createHoldGate } from '../src/lib/gesture-gate.js';
+import { handAboveHead } from '../src/lib/pose-raised.js';
 import { parseCommand } from '../src/lib/voice-commands.js';
+import { AFFIRMATIONS, affirmationFor } from '../src/lib/voice.js';
 
-describe('gesture gate', () => {
-  it('accepts a thumbs up held long enough and fires exactly once', () => {
-    const gate = createGestureGate();
-    expect(gate.update('Thumb_Up', 0.9, 0).fired).toBe(false);
-    expect(gate.update('Thumb_Up', 0.9, 300).fired).toBe(false);
-    expect(gate.update('Thumb_Up', 0.9, 700).fired).toBe(true);
-    // Still held: must not fire again.
-    expect(gate.update('Thumb_Up', 0.9, 900).fired).toBe(false);
-    expect(gate.update('Thumb_Up', 0.9, 1400).fired).toBe(false);
+const point = (x, y, visible = true) => ({ x, y, v: visible ? 1 : 0.1, visible });
+
+describe('handAboveHead (the start position)', () => {
+  it('accepts a right hand above the head', () => {
+    const points = {
+      nose: point(0.5, 0.18),
+      leftShoulder: point(0.42, 0.3),
+      rightShoulder: point(0.58, 0.3),
+      rightWrist: point(0.62, 0.05),
+    };
+    expect(handAboveHead(points)).toMatchObject({ any: true, right: true, left: false });
   });
 
-  it('does not fire until the hold time has passed', () => {
-    const gate = createGestureGate({ holdMs: 600 });
-    expect(gate.update('Open_Palm', 0.8, 0).fired).toBe(false);
-    expect(gate.update('Open_Palm', 0.8, 599).fired).toBe(false);
-    expect(gate.update('Open_Palm', 0.8, 600).fired).toBe(true);
+  it('accepts either hand, for a shoulder that cannot lift', () => {
+    const points = {
+      nose: point(0.5, 0.18),
+      leftShoulder: point(0.42, 0.3),
+      leftWrist: point(0.38, 0.06),
+    };
+    expect(handAboveHead(points)).toMatchObject({ any: true, left: true, right: false });
   });
 
-  it('reports progress so the UI can ask the athlete to keep holding', () => {
-    const gate = createGestureGate({ holdMs: 600 });
-    expect(gate.update('Thumb_Up', 0.9, 0).progress).toBe(0);
-    expect(gate.update('Thumb_Up', 0.9, 300).progress).toBeCloseTo(0.5, 5);
+  it('rejects a hand that is only at shoulder height', () => {
+    const points = {
+      nose: point(0.5, 0.18),
+      leftShoulder: point(0.42, 0.3),
+      rightShoulder: point(0.58, 0.3),
+      rightWrist: point(0.62, 0.28),
+    };
+    expect(handAboveHead(points).any).toBe(false);
   });
 
-  it('ignores low-confidence and unwanted gestures', () => {
-    const gate = createGestureGate({ minScore: 0.6 });
-    expect(gate.update('Thumb_Up', 0.4, 0).active).toBe(false);
-    expect(gate.update('Victory', 0.99, 0).active).toBe(false);
-    expect(gate.update(null, 0, 0).active).toBe(false);
+  it('falls back to the shoulder when the head is not visible', () => {
+    const points = {
+      nose: point(0.5, 0.18, false),
+      rightShoulder: point(0.58, 0.3),
+      rightWrist: point(0.62, 0.08),
+    };
+    expect(handAboveHead(points).right).toBe(true);
   });
 
-  it('needs the hand to drop before it can fire again', () => {
-    const gate = createGestureGate({ cooldownMs: 0 });
-    expect(gate.update('Thumb_Up', 0.9, 0).fired).toBe(false);
-    expect(gate.update('Thumb_Up', 0.9, 700).fired).toBe(true);
-    gate.update(null, 0, 800); // hand lowered
-    expect(gate.update('Thumb_Up', 0.9, 900).fired).toBe(false);
-    expect(gate.update('Thumb_Up', 0.9, 1600).fired).toBe(true);
-  });
-
-  it('treats a change of gesture as a new hold', () => {
-    const gate = createGestureGate({ holdMs: 600 });
-    expect(gate.update('Thumb_Up', 0.9, 0).fired).toBe(false);
-    // The switch restarts the hold, so it fires 600 ms after the change.
-    expect(gate.update('Open_Palm', 0.9, 500).fired).toBe(false);
-    expect(gate.update('Open_Palm', 0.9, 1000).fired).toBe(false);
-    expect(gate.update('Open_Palm', 0.9, 1150).fired).toBe(true);
-  });
-
-  it('can be reset between trials', () => {
-    const gate = createGestureGate();
-    expect(gate.update('Thumb_Up', 0.9, 0).fired).toBe(false);
-    expect(gate.update('Thumb_Up', 0.9, 700).fired).toBe(true);
-    expect(() => gate.reset()).not.toThrow();
-    // A fresh hold after the reset behaves like the first one.
-    expect(gate.update('Thumb_Up', 0.9, 1000).fired).toBe(false);
-    expect(gate.update('Thumb_Up', 0.9, 1700).fired).toBe(true);
-  });
-
-  it('only accepts the two documented start gestures', () => {
-    expect(START_GESTURES).toEqual(['Thumb_Up', 'Open_Palm']);
+  it('does nothing without usable landmarks', () => {
+    expect(handAboveHead(null).any).toBe(false);
+    expect(handAboveHead({}).any).toBe(false);
+    expect(handAboveHead({ nose: point(0.5, 0.18), rightWrist: point(0.6, 0.05, false) }).any).toBe(false);
   });
 });
 
-describe('raise-hand gate', () => {
-  it('fires after the hand has been up long enough, then waits for a release', () => {
-    const gate = createHoldGate({ holdMs: 400 });
+describe('hold gate', () => {
+  it('fires once the position has been held long enough', () => {
+    const gate = createHoldGate({ holdMs: 600 });
     expect(gate.update(true, 0).fired).toBe(false);
-    expect(gate.update(true, 200).fired).toBe(false);
-    expect(gate.update(true, 450).fired).toBe(true);
-    expect(gate.update(true, 900).fired).toBe(false);
-    gate.update(false, 1000);
-    // The 1.2 s cooldown from the first fire has to elapse too.
-    expect(gate.update(true, 1100).fired).toBe(false);
-    expect(gate.update(true, 1600).fired).toBe(false);
-    expect(gate.update(true, 1650).fired).toBe(true);
+    expect(gate.update(true, 300).fired).toBe(false);
+    expect(gate.update(true, 650).fired).toBe(true);
+    // Still held: no second start.
+    expect(gate.update(true, 1200).fired).toBe(false);
   });
 
-  it('does not fire for a hand that passes through', () => {
-    const gate = createHoldGate({ holdMs: 400 });
+  it('reports progress so the screen can ask the athlete to keep holding', () => {
+    const gate = createHoldGate({ holdMs: 600 });
+    expect(gate.update(true, 0).progress).toBe(0);
+    expect(gate.update(true, 300).progress).toBeCloseTo(0.5, 5);
+  });
+
+  it('needs the hand lowered before it can fire again', () => {
+    const gate = createHoldGate({ holdMs: 400, cooldownMs: 0 });
     expect(gate.update(true, 0).fired).toBe(false);
-    expect(gate.update(true, 200).fired).toBe(false);
-    gate.update(false, 250);
+    expect(gate.update(true, 450).fired).toBe(true);
+    gate.update(false, 500);
+    expect(gate.update(true, 600).fired).toBe(false);
+    expect(gate.update(true, 1100).fired).toBe(true);
+  });
+
+  it('ignores a hand that passes through', () => {
+    const gate = createHoldGate({ holdMs: 400 });
+    gate.update(true, 0);
+    gate.update(false, 200);
     expect(gate.update(true, 300).fired).toBe(false);
     expect(gate.update(true, 600).fired).toBe(false);
-    expect(gate.update(true, 850).fired).toBe(true);
-  });
-});
-
-describe('handsRaised', () => {
-  const point = (x, y, visible = true) => ({ x, y, v: 1, visible });
-
-  it('detects a hand above the shoulder on either side', () => {
-    const points = {
-      leftShoulder: point(0.4, 0.3),
-      rightShoulder: point(0.6, 0.3),
-      leftWrist: point(0.35, 0.1),
-      rightWrist: point(0.65, 0.5),
-    };
-    expect(handsRaised(points)).toMatchObject({ any: true, left: true, right: false });
   });
 
-  it('ignores a hand at chest height', () => {
-    const points = {
-      leftShoulder: point(0.4, 0.3),
-      rightShoulder: point(0.6, 0.3),
-      leftWrist: point(0.35, 0.42),
-      rightWrist: point(0.65, 0.45),
-    };
-    expect(handsRaised(points).any).toBe(false);
-  });
-
-  it('needs a visible wrist and shoulder', () => {
-    const hidden = { x: 0.3, y: 0.1, v: 0.1, visible: false };
-    const points = { leftShoulder: point(0.4, 0.3), leftWrist: hidden };
-    expect(handsRaised(points).any).toBe(false);
-    expect(handsRaised(null).any).toBe(false);
+  it('resets cleanly between trials', () => {
+    const gate = createHoldGate({ holdMs: 400, cooldownMs: 0 });
+    expect(gate.update(true, 0).fired).toBe(false);
+    expect(gate.update(true, 450).fired).toBe(true);
+    expect(() => gate.reset()).not.toThrow();
+    expect(gate.update(true, 500).fired).toBe(false);
+    expect(gate.update(true, 950).fired).toBe(true);
   });
 });
 
 describe('voice commands', () => {
   it('recognises the ways people actually say "start"', () => {
-    for (const phrase of ['start', 'Start.', 'okay go', 'ready', 'begin please', 'next one', 'hop']) {
+    for (const phrase of ['ready to go', 'start', 'Start.', 'okay go', 'ready', 'begin please', 'next one', 'hop']) {
       expect(parseCommand(phrase)).toBe('start');
     }
   });
@@ -139,5 +111,16 @@ describe('voice commands', () => {
     expect(parseCommand('')).toBe(null);
     expect(parseCommand(null)).toBe(null);
     expect(parseCommand('my knee feels fine today')).toBe(null);
+  });
+});
+
+describe('affirmations', () => {
+  it('never says a clinical result, and cycles instead of repeating', () => {
+    expect(affirmationFor(0)).toBe(AFFIRMATIONS[0]);
+    expect(affirmationFor(1)).toBe(AFFIRMATIONS[1]);
+    expect(affirmationFor(AFFIRMATIONS.length)).toBe(AFFIRMATIONS[0]);
+    for (const line of AFFIRMATIONS) {
+      expect(line).not.toMatch(/healed|recovered|cleared|ready for sport|progress/i);
+    }
   });
 });

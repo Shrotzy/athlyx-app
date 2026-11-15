@@ -14,15 +14,15 @@ import {
   createFpsMeter,
   createPoseLandmarker,
   describeCameraError,
-  handsRaised,
+  handAboveHead,
   namedPoints,
   startCamera,
   stopCamera,
 } from '../lib/pose.js';
-import { bestGesture, closeGestureRecognizer, createGestureRecognizer } from '../lib/gesture.js';
-import { createGestureGate, createHoldGate } from '../lib/gesture-gate.js';
+import { createHoldGate } from '../lib/gesture-gate.js';
 import {
   CUES,
+  affirmationFor,
   cancelSpeech,
   chime,
   setVoiceMuted,
@@ -37,42 +37,33 @@ import { LEGS, PARAMS, SIDES, TESTS, TEST_META } from '@shared/constants.js';
 import { isValidTrial } from '@shared/validation.js';
 
 const TARGET_FPS = PARAMS.preferredFrameRate;
+const SCORED_TRIALS = PARAMS.scoredTrials ?? PARAMS.minValidTrials;
+const HOLD_SECONDS = PARAMS.holdSeconds;
 
 /** Seconds between trials: long enough to walk back to the start line. */
 const REST_SECONDS = 6;
-
-/** How often the hand-gesture model runs while it is waiting for a gesture. */
-const GESTURE_CHECK_MS = 140;
 
 const VOICE_COMMANDS_KEY = 'athlyx.voicecommands';
 const SIGNAL_KEY = 'athlyx.signal';
 
 /**
- * How a trial starts.
- *
- * `auto` needs no signal at all: a spoken countdown runs and the trial starts
- * itself. `hand` is a hand above the shoulder, read from the pose model that is
- * already running. `thumb` uses the separate gesture model.
- *
- * `auto` is the default on purpose: it is the only one that cannot fail because
- * of the lighting, the distance from the camera, or a heavy accent.
+ * How a trial starts. No gesture classifier: a raised hand is a comparison of
+ * the wrist against the nose, using the pose model that is already running, so
+ * there is nothing extra to download and nothing to get wrong in poor light.
  */
 const SIGNAL_MODES = [
+  ['pose', '🙋 hand above head'],
   ['auto', '⏱ automatic'],
-  ['hand', '✋ raise a hand'],
-  ['thumb', '👍 thumbs up'],
 ];
 
 const SIGNAL_DETAIL = {
+  pose: 'Raise your right hand above your head',
   auto: 'Starts automatically',
-  hand: 'Raise a hand to start',
-  thumb: 'Thumbs up or open palm to start',
 };
 
 const SIGNAL_STATUS = {
-  auto: 'Automatic: a spoken 3-2-1 starts each trial. Nothing to press, nothing to learn.',
-  hand: 'Raise either hand above your shoulder for half a second to start a trial.',
-  thumb: 'Hold a thumbs up or an open palm for half a second. Needs the separate hand model.',
+  pose: 'Raise your right hand straight above your head, hold it for a moment, then start moving. Either hand works.',
+  auto: 'A spoken 3-2-1 starts each trial. Nothing to press, nothing to raise.',
 };
 
 function readFlag(key, fallback) {
@@ -96,9 +87,9 @@ function writeFlag(key, value) {
 function readSignal() {
   try {
     const stored = localStorage.getItem(SIGNAL_KEY);
-    return ['auto', 'hand', 'thumb'].includes(stored) ? stored : 'auto';
+    return ['pose', 'auto'].includes(stored) ? stored : 'pose';
   } catch {
-    return 'auto';
+    return 'pose';
   }
 }
 
@@ -130,6 +121,15 @@ function bigCueFor(phaseName, isLanding) {
   }
 }
 
+/** One line that says exactly what is left to do on this leg. */
+function remainingText(progress) {
+  if (!progress || progress.complete) return 'This leg is finished';
+  if (!progress.practice) return 'One practice trial first, then the scored ones';
+  const left = Math.max(0, SCORED_TRIALS - (progress.validCount || 0));
+  if (left === 0) return 'Enough valid trials — finish this leg';
+  return left === 1 ? 'One more valid trial to go' : `${left} more valid trials to go`;
+}
+
 export default function TestRunner() {
   const { test, leg } = useParams();
   const meta = TEST_META[test];
@@ -137,7 +137,6 @@ export default function TestRunner() {
 
   const videoRef = useRef(null);
   const landmarkerRef = useRef(null);
-  const gestureRef = useRef(null);
   const streamRef = useRef(null);
   const rafRef = useRef(0);
   const detectorRef = useRef(null);
@@ -154,10 +153,8 @@ export default function TestRunner() {
   const startTrialRef = useRef(null);
   const bodyCheckRef = useRef({ ok: false, missing: [] });
   const readyRef = useRef(false);
-  const gateRef = useRef(createGestureGate({ holdMs: 450, minScore: 0.5 }));
-  const handGateRef = useRef(createHoldGate());
-  const signalRef = useRef('auto');
-  const lastGestureAtRef = useRef(0);
+  const triggerGateRef = useRef(createHoldGate({ holdMs: 600 }));
+  const signalRef = useRef('pose');
   const restTimerRef = useRef(0);
   const autoTimerRef = useRef(0);
   const autoStartedRef = useRef(false);
@@ -181,9 +178,9 @@ export default function TestRunner() {
   // Hands-free / audio layer
   const [ready, setReady] = useState(false);
   const [restLeft, setRestLeft] = useState(0);
+  const [restDetail, setRestDetail] = useState('');
   const [cue, setCue] = useState(null);
   const [holdProgress, setHoldProgress] = useState(0);
-  const [gestureStatus, setGestureStatus] = useState('off'); // off | loading | ready | unavailable
   const [voiceOn, setVoiceOn] = useState(() => !voiceMuted() && voiceSupported());
   const [signal, setSignal] = useState(readSignal);
   const [voiceCommandsOn, setVoiceCommandsOn] = useState(() => readFlag(VOICE_COMMANDS_KEY, false));
@@ -204,7 +201,6 @@ export default function TestRunner() {
     signalRef.current = signal;
   }, [signal]);
 
-  /** Arm or disarm the "waiting for the athlete's signal" state. */
   const arm = useCallback((value) => {
     readyRef.current = value;
     setReady(value);
@@ -231,16 +227,12 @@ export default function TestRunner() {
     streamRef.current = null;
     landmarkerRef.current?.close?.();
     landmarkerRef.current = null;
-    closeGestureRecognizer(gestureRef.current);
-    gestureRef.current = null;
     cancelSpeech();
-    gateRef.current.reset();
-    handGateRef.current.reset();
+    triggerGateRef.current.reset();
     readyRef.current = false;
     setReady(false);
     setRestLeft(0);
     setHoldProgress(0);
-    setGestureStatus('off');
     setRecording(false);
     setTracking(false);
     setPoints(null);
@@ -257,28 +249,12 @@ export default function TestRunner() {
     return landmarkerRef.current;
   };
 
-  const ensureGestures = useCallback(async () => {
-    if (gestureRef.current) return gestureRef.current;
-    setGestureStatus('loading');
-    try {
-      const recognizer = await createGestureRecognizer();
-      gestureRef.current = recognizer;
-      setGestureStatus('ready');
-      return recognizer;
-    } catch (problem) {
-      console.warn('[gesture] could not load the gesture model:', problem?.message || problem);
-      setGestureStatus('unavailable');
-      return null;
-    }
-  }, []);
-
   /**
    * After a trial: say what happened, rest, then either start the next trial on
-   * its own (automatic mode) or wait for the athlete's signal. Nothing is
-   * clicked either way.
+   * its own or wait for the raised hand. Nothing is clicked either way.
    */
   const scheduleNext = useCallback(
-    ({ complete, spoken }) => {
+    ({ complete, spoken, detail }) => {
       arm(false);
       clearRest();
 
@@ -290,9 +266,10 @@ export default function TestRunner() {
 
       setCue({
         text: 'REST',
-        detail: signalRef.current === 'auto' ? 'The next trial starts by itself' : 'Get back to the start line',
+        detail: signalRef.current === 'auto' ? 'The next trial starts by itself' : detail,
         tone: 'info',
       });
+      setRestDetail(detail || '');
       speak(`${spoken || ''} ${CUES.rest(REST_SECONDS)}`.trim());
 
       let left = REST_SECONDS;
@@ -313,9 +290,8 @@ export default function TestRunner() {
         clearInterval(restTimerRef.current);
         restTimerRef.current = 0;
         setRestLeft(0);
-        gateRef.current.reset();
-        handGateRef.current.reset();
-        lastGestureAtRef.current = 0;
+        setRestDetail('');
+        triggerGateRef.current.reset();
 
         if (signalRef.current === 'auto') {
           setCue({ text: 'GO', detail: 'Trial started', tone: 'good' });
@@ -326,9 +302,9 @@ export default function TestRunner() {
         }
 
         arm(true);
-        setCue({ text: 'READY', detail: SIGNAL_DETAIL[signalRef.current], tone: 'info' });
+        setCue({ text: 'READY', detail: SIGNAL_DETAIL.pose, tone: 'info' });
         chime('ready');
-        speak(CUES.hopReady);
+        speak(CUES.readyToGo);
       }, 1000);
     },
     [arm, clearRest],
@@ -397,16 +373,16 @@ export default function TestRunner() {
 
       let spoken;
       if (attemptedPractice) {
-        spoken = 'Practice trial saved.';
+        spoken = CUES.practiceDone;
       } else if (!trial.valid) {
         spoken = CUES.trialVoided;
       } else if (isLanding) {
-        spoken = CUES.landingSaved;
+        spoken = `${affirmationFor(trial.trialNo)} ${CUES.landingSaved}`;
       } else {
-        spoken = CUES.trialSaved(metrics.hopDistanceCm);
+        spoken = `${affirmationFor(trial.trialNo)} ${CUES.trialSaved(metrics.hopDistanceCm)}`;
       }
 
-      scheduleNext({ complete: Boolean(nextProgress?.complete), spoken });
+      scheduleNext({ complete: Boolean(nextProgress?.complete), spoken, detail: remainingText(nextProgress) });
     },
     [isLanding, leg, progress?.attempts, progress?.practice, scheduleNext, test, user?.heightCm],
   );
@@ -434,8 +410,7 @@ export default function TestRunner() {
     autoTimerRef.current = 0;
     clearRest();
     arm(false);
-    gateRef.current.reset();
-    handGateRef.current.reset();
+    triggerGateRef.current.reset();
     trialStartedAtRef.current = performance.now();
     detectorRef.current = isLanding
       ? new LandingTrialDetector({ side, fps: TARGET_FPS })
@@ -457,7 +432,7 @@ export default function TestRunner() {
     setHint(!progress?.practice ? 'Practice trial — this one is not scored.' : startText);
     setCue({
       text: isLanding ? 'STEP DOWN' : 'HOP WHEN READY',
-      detail: !progress?.practice ? 'Practice trial — not scored' : 'Stand still, then go',
+      detail: isLanding ? 'Land on one leg and hold still' : 'Land on the same leg and hold still',
       tone: 'info',
     });
     speak(progress?.practice === false ? `${CUES.practiceIntro} ${startText}` : startText);
@@ -491,30 +466,13 @@ export default function TestRunner() {
         const measuredFps = fpsMeterRef.current.push(now);
         if (measuredFps > 0) setFps(Math.round(measuredFps));
 
-        // Waiting for the athlete's start signal.
-        if (!recordingRef.current && readyRef.current) {
-          if (signalRef.current === 'hand') {
-            const verdict = handGateRef.current.update(handsRaised(named).any, now);
-            setHoldProgress(verdict.progress);
-            if (verdict.fired) {
-              arm(false);
-              startTrialRef.current?.();
-            }
-          } else if (signalRef.current === 'thumb' && gestureRef.current) {
-            if (now - lastGestureAtRef.current > GESTURE_CHECK_MS) {
-              lastGestureAtRef.current = now;
-              try {
-                const found = bestGesture(gestureRef.current.recognizeForVideo(video, now));
-                const verdict = gateRef.current.update(found?.name ?? null, found?.score ?? 0, now);
-                setHoldProgress(verdict.progress);
-                if (verdict.fired) {
-                  arm(false);
-                  startTrialRef.current?.();
-                }
-              } catch (gestureError) {
-                console.warn('[gesture] recognition failed:', gestureError?.message || gestureError);
-              }
-            }
+        // Waiting for the raised hand.
+        if (!recordingRef.current && readyRef.current && signalRef.current === 'pose') {
+          const verdict = triggerGateRef.current.update(handAboveHead(named).any, now);
+          setHoldProgress(verdict.progress);
+          if (verdict.fired) {
+            arm(false);
+            startTrialRef.current?.();
           }
         }
 
@@ -612,8 +570,16 @@ export default function TestRunner() {
       setPhase('live');
       autoStartedRef.current = false;
       loop();
-      setCue({ text: 'READY', detail: SIGNAL_DETAIL[signal], tone: 'info' });
-      speak('Camera on. Stand still with your whole body in frame.');
+
+      if (signal === 'pose') {
+        arm(true);
+        setCue({ text: 'READY', detail: SIGNAL_DETAIL.pose, tone: 'info' });
+        chime('ready');
+        speak(`${CUES.cameraOn} ${CUES.readyToGo}`);
+      } else {
+        setCue({ text: 'GET SET', detail: 'Starting automatically once you are in frame', tone: 'info' });
+        speak(CUES.cameraOn);
+      }
     } catch (problem) {
       console.error('[camera] start failed:', problem);
       setPhase('error');
@@ -630,9 +596,9 @@ export default function TestRunner() {
   };
 
   /**
-   * Swap the pose model without touching the camera. The kilometre-scale cause
-   * of "the camera is useless" on a weak device is frame rate, and the lite
-   * model is several times faster than the full one.
+   * Swap the pose model without touching the camera. The usual cause of "the
+   * camera is useless" on a weak device is frame rate, and the lite model is
+   * several times faster than the full one.
    */
   const switchModel = async (next) => {
     if (recording || switching || next === model) return;
@@ -672,11 +638,11 @@ export default function TestRunner() {
     }
   };
 
-  /** Lets the athlete (or the demo audience) hear exactly what the cues sound like. */
+  /** Hears exactly what the cues sound like before relying on them. */
   const testSound = () => {
     unlockVoice();
     chime('ready');
-    speak('Sound check. Three, two, one.');
+    speak('Sound check. Ready to go? Three, two, one.');
   };
 
   const chooseSignal = (next) => {
@@ -686,30 +652,18 @@ export default function TestRunner() {
     } catch {
       /* private mode */
     }
-    gestureRef.current?.close?.();
-    gestureRef.current = null;
-    setGestureStatus('off');
-    gateRef.current.reset();
-    handGateRef.current.reset();
+    triggerGateRef.current.reset();
     setHoldProgress(0);
     autoStartedRef.current = false;
 
-    speak(
-      next === 'auto'
-        ? 'Automatic start.'
-        : next === 'hand'
-          ? 'Raise a hand to start.'
-          : 'Thumbs up to start.',
-    );
-    setCue({ text: 'READY', detail: SIGNAL_DETAIL[next], tone: 'info' });
-
-    if (phase === 'live') {
-      if (next === 'auto') {
-        arm(false);
-      } else {
-        arm(true);
-      }
-      if (next === 'thumb') ensureGestures();
+    if (next === 'pose') {
+      speak('Start by raising your right hand above your head.');
+      setCue({ text: 'READY', detail: SIGNAL_DETAIL.pose, tone: 'info' });
+      if (phase === 'live') arm(true);
+    } else {
+      speak('Automatic start. A three, two, one countdown starts each trial.');
+      setCue({ text: 'GET SET', detail: SIGNAL_DETAIL.auto, tone: 'info' });
+      if (phase === 'live') arm(false);
     }
   };
 
@@ -717,14 +671,8 @@ export default function TestRunner() {
     const next = !voiceCommandsOn;
     setVoiceCommandsOn(next);
     writeFlag(VOICE_COMMANDS_KEY, next);
-    if (next) speak('Voice commands on. Say ready to start a trial.');
+    if (next) speak('Voice commands on. Say ready to go to start a trial.');
   };
-
-  // The separate hand model is only downloaded when thumbs-up is the chosen signal.
-  useEffect(() => {
-    if (phase !== 'live' || signal !== 'thumb') return;
-    ensureGestures();
-  }, [phase, signal, ensureGestures]);
 
   // Voice commands are opt-in: enabling them is what triggers the microphone
   // prompt, so nobody is asked for the microphone unasked.
@@ -750,7 +698,7 @@ export default function TestRunner() {
         }
         if (id === 'repeat') {
           arm(true);
-          setCue({ text: 'READY', detail: SIGNAL_DETAIL[signalRef.current], tone: 'info' });
+          setCue({ text: 'READY', detail: SIGNAL_DETAIL.pose, tone: 'info' });
         }
       },
     });
@@ -812,12 +760,9 @@ export default function TestRunner() {
         ? 'This is an embedded preview, and browsers often block audio inside one. Open the app in its own tab if you hear nothing.'
         : null;
 
-  const signalNote =
-    signal === 'thumb' && gestureStatus === 'loading'
-      ? 'Loading the hand model…'
-      : signal === 'thumb' && gestureStatus === 'unavailable'
-        ? 'The hand model could not load — switch to automatic or raise a hand.'
-        : SIGNAL_STATUS[signal];
+  const movementInstruction = isLanding
+    ? 'Step off the step, land on one leg and hold still.'
+    : 'Hop forward as far as you can, land on the same leg and hold still.';
 
   return (
     <div className="stack">
@@ -856,11 +801,23 @@ export default function TestRunner() {
         </span>
       </div>
 
-      {progress?.practice === false && !recording && (
-        <div className="notice">
-          This first attempt is a practice trial. It is not scored, so you can get a feel for the movement.
-        </div>
-      )}
+      {/* Where you are in the session, in plain words. */}
+      <ol className="plan">
+        <li className={progress?.practice ? 'done' : 'active'}>
+          <strong>1 · Practice trial</strong>
+          <span>Not scored — get a feel for it</span>
+        </li>
+        <li className={progress?.practice ? (progress?.complete ? 'done' : 'active') : ''}>
+          <strong>2 · {SCORED_TRIALS} scored trials</strong>
+          <span>
+            {progress?.validCount || 0} of {SCORED_TRIALS} valid
+          </span>
+        </li>
+        <li className={progress?.complete ? 'active' : ''}>
+          <strong>3 · Next test or leg</strong>
+          <span>Back to the check-in</span>
+        </li>
+      </ol>
 
       <div className="camera-wrap" style={camera?.aspect ? { aspectRatio: String(camera.aspect) } : undefined}>
         <video ref={videoRef} autoPlay playsInline muted className={isLanding ? 'front-view' : ''} />
@@ -871,8 +828,11 @@ export default function TestRunner() {
         {phase === 'live' && (cue || restLeft > 0) && (
           <div className={`cue-layer tone-${cue?.tone || 'info'}`} aria-live="polite">
             <div className="cue-text">{restLeft > 0 ? restLeft : cue?.text}</div>
-            {cue?.detail && restLeft <= 0 && <div className="cue-detail">{cue.detail}</div>}
-            {restLeft > 0 && <div className="cue-detail">Rest — get back to the start line</div>}
+            {restLeft > 0 ? (
+              <div className="cue-detail">{restDetail || 'Get back to the start line'}</div>
+            ) : (
+              cue?.detail && <div className="cue-detail">{cue.detail}</div>
+            )}
             {ready && holdProgress > 0 && (
               <div className="cue-hold" role="progressbar" aria-valuenow={Math.round(holdProgress * 100)}>
                 <span style={{ width: `${Math.round(holdProgress * 100)}%` }} />
@@ -886,13 +846,29 @@ export default function TestRunner() {
 
         {phase === 'intro' && (
           <div className="camera-overlay">
-            <div className="stack" style={{ maxWidth: 460 }}>
-              <h3 style={{ margin: 0 }}>Camera placement</h3>
-              <p className="muted small" style={{ margin: 0 }}>
-                {meta.cameraView === 'side'
-                  ? 'Stand side-on to the camera so the whole body is visible, feet included. Keep the camera still for both legs.'
-                  : 'Face the camera squarely so both hips, knees and feet are visible.'}
-              </p>
+            <div className="stack" style={{ maxWidth: 560 }}>
+              <h3 style={{ margin: 0 }}>How this test runs</h3>
+              <ol className="steps small">
+                <li>
+                  <strong>Set the camera.</strong>{' '}
+                  {meta.cameraView === 'side'
+                    ? 'Stand side-on so your whole body, feet included, is visible. Keep the camera still for both legs.'
+                    : 'Face the camera squarely so both hips, knees and feet are visible.'}
+                </li>
+                <li>
+                  <strong>One practice trial.</strong> Not scored. Same movement as the real thing.
+                </li>
+                <li>
+                  <strong>{SCORED_TRIALS} scored trials.</strong> Rest {REST_SECONDS} seconds between them.
+                </li>
+                <li>
+                  <strong>Each trial:</strong> {movementInstruction} Hold for {HOLD_SECONDS} seconds.
+                </li>
+                <li>
+                  <strong>Start each trial</strong> by raising your right hand above your head, or let the countdown
+                  start it. You can also press space.
+                </li>
+              </ol>
               <button className="button" type="button" onClick={startSession}>
                 Turn on camera and start
               </button>
@@ -988,7 +964,7 @@ export default function TestRunner() {
             ) : null}
           </div>
           <p className="muted small" style={{ margin: 0 }}>
-            {signalNote}
+            {SIGNAL_STATUS[signal]} {remainingText(progress)}.
           </p>
           {audioNote ? (
             <p className="muted small hud-warn" style={{ margin: 0 }}>

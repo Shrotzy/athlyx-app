@@ -28,6 +28,7 @@ export const LANDMARK_POINTS = [
  * the replay format are unchanged.
  */
 export const MEDIAPIPE_INDEX = {
+  nose: 0,
   leftWrist: 15,
   rightWrist: 16,
   leftShoulder: 11,

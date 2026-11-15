@@ -676,6 +676,61 @@ tr:last-child td {
   font-family: var(--mono);
 }
 
+/* ---------- session plan / instructions ---------- */
+
+.plan {
+  display: grid;
+  gap: 0.6rem;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  counter-reset: step;
+}
+
+.plan li {
+  display: grid;
+  gap: 0.15rem;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+  font-size: 0.82rem;
+}
+
+.plan li strong {
+  font-weight: 650;
+}
+
+.plan li span {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.plan li.done {
+  border-color: rgba(74, 222, 128, 0.4);
+  background: rgba(74, 222, 128, 0.07);
+}
+
+.plan li.active {
+  border-color: rgba(94, 234, 212, 0.55);
+  background: rgba(94, 234, 212, 0.08);
+}
+
+.steps {
+  margin: 0;
+  padding-left: 1.15rem;
+  display: grid;
+  gap: 0.3rem;
+  text-align: left;
+  color: #cbd5e1;
+}
+
+.steps li::marker {
+  color: var(--accent);
+  font-weight: 700;
+}
+
 /* ---------- hands-free cue layer ---------- */
 
 .cue-layer {

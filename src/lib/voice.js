@@ -7,7 +7,8 @@
  *
  * Sound is a convenience, never the only channel: the same instruction is
  * always drawn on screen in large type, and every trial can be started with a
- * button as well. If a browser cannot speak, everything else still works.
+ * button or the space bar as well. If a browser cannot speak, everything else
+ * still works, and the runner says so.
  */
 
 const MUTED_KEY = 'athlyx.voice.muted';
@@ -130,9 +131,9 @@ function getAudioContext() {
 }
 
 /**
- * A short beep cue. This is the fallback that keeps the countdown usable when
- * a browser has no installed speech voices, or when an embedded preview blocks
- * audio: two rising notes mean "go".
+ * A short beep cue. This keeps the countdown usable when a browser has no
+ * installed speech voices, or when an embedded preview blocks audio: two rising
+ * notes mean "go".
  */
 export function chime(kind = 'tick') {
   if (muted) return;
@@ -179,20 +180,40 @@ export function voiceDiagnostics() {
   return { supported, voiceCount, muted, embedded };
 }
 
+/**
+ * Encouragement. Short, specific and never a clinical claim: it reacts to the
+ * attempt, not to the result. Rotated by trial so it does not become wallpaper.
+ */
+export const AFFIRMATIONS = [
+  'Nice.',
+  'Good rep.',
+  'That looked strong.',
+  'Well done.',
+  'Lovely landing.',
+  'That is the one.',
+];
+
+export function affirmationFor(index) {
+  const safe = Math.abs(Math.trunc(Number(index) || 0));
+  return AFFIRMATIONS[safe % AFFIRMATIONS.length];
+}
+
 /** Spoken versions of the on-screen cue text. Kept together so they never drift. */
 export const CUES = {
-  practiceIntro: 'This is a practice trial. It is not scored.',
+  cameraOn:
+    'Camera on. Stand back until your feet are in frame, then raise your right hand above your head when you are ready.',
+  readyToGo: 'Ready to go? Raise your right hand above your head.',
+  readyToGoAuto: 'Ready to go. Starting in three, two, one.',
+  practiceIntro: 'This first one is your practice trial. It is not scored.',
+  practiceDone: 'Nice. That is the practice trial done. Three scored trials to go.',
   hopStart: 'Hop when you are ready.',
   stepStart: 'Step off the step when you are ready.',
-  hopReady: 'Ready when you are. Show a thumbs up, or say ready.',
   holdIt: 'Hold it.',
   trialSaved: (distanceCm) =>
     Number.isFinite(distanceCm) ? `Trial saved. ${Math.round(distanceCm)} centimetres.` : 'Trial saved.',
   landingSaved: 'Trial saved.',
-  trialVoided: 'That trial was voided. Let us try again.',
-  rest: (seconds) => `Nice. Rest for ${seconds} seconds.`,
-  legComplete: 'This leg is complete. You can stop the camera, or move to the next test.',
+  trialVoided: 'No problem at all. That one did not count, so let us try it again.',
+  rest: (seconds) => `Rest for ${seconds} seconds.`,
+  legComplete: 'That is this leg done. Good work. Head back to the check-in for the next test.',
   stepBack: 'Step back so your feet are in frame.',
-  handsFreeUnavailable:
-    'Hands-free start is unavailable in this browser. Use the on-screen button or the space bar.',
 };
