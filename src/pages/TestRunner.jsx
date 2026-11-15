@@ -14,7 +14,7 @@ import {
   createFpsMeter,
   createPoseLandmarker,
   describeCameraError,
-  handAboveHead,
+  handsAboveHead,
   namedPoints,
   startCamera,
   stopCamera,
@@ -57,12 +57,12 @@ const SIGNAL_MODES = [
 ];
 
 const SIGNAL_DETAIL = {
-  pose: 'Raise your right hand above your head',
+  pose: 'Raise both hands above your head',
   auto: 'Starts automatically',
 };
 
 const SIGNAL_STATUS = {
-  pose: 'Raise your right hand straight above your head, hold it for a moment, then start moving. Either hand works.',
+  pose: 'Raise both hands straight above your head, hold for a moment, then lower them and start moving.',
   auto: 'A spoken 3-2-1 starts each trial. Nothing to press, nothing to raise.',
 };
 
@@ -468,7 +468,8 @@ export default function TestRunner() {
 
         // Waiting for the raised hand.
         if (!recordingRef.current && readyRef.current && signalRef.current === 'pose') {
-          const verdict = triggerGateRef.current.update(handAboveHead(named).any, now);
+          const raised = handsAboveHead(named);
+          const verdict = triggerGateRef.current.update(raised.both, now);
           setHoldProgress(verdict.progress);
           if (verdict.fired) {
             arm(false);
@@ -657,7 +658,7 @@ export default function TestRunner() {
     autoStartedRef.current = false;
 
     if (next === 'pose') {
-      speak('Start by raising your right hand above your head.');
+      speak('Start by raising both hands above your head.');
       setCue({ text: 'READY', detail: SIGNAL_DETAIL.pose, tone: 'info' });
       if (phase === 'live') arm(true);
     } else {
@@ -865,8 +866,8 @@ export default function TestRunner() {
                   <strong>Each trial:</strong> {movementInstruction} Hold for {HOLD_SECONDS} seconds.
                 </li>
                 <li>
-                  <strong>Start each trial</strong> by raising your right hand above your head, or let the countdown
-                  start it. You can also press space.
+                  <strong>Start each trial</strong> by raising both hands above your head, or let the countdown start
+                  it. You can also press space.
                 </li>
               </ol>
               <button className="button" type="button" onClick={startSession}>

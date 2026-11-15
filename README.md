@@ -23,7 +23,7 @@ This repository is the working foundation for the project described in [docs/SPE
 | Therapist review: scores, marker breakdown, trial notes, decision, skeleton replay | Implemented |
 | Exercise library, custom exercises, plans, completion tracking | Implemented (library is demo content) |
 | Spoken cues and large on-screen instructions | Implemented — browser speech synthesis, no key or audio files |
-| Hands-free trial start: thumbs up, open palm, voice command, or space bar | Implemented |
+| Hands-free trial start: both hands above the head, voice command, or space bar | Implemented |
 | Post-session AI debrief (what was measured, spread, change since last check-in) | Implemented, off unless a key is set, cached per check-in |
 | Optional plain-language explanations via Gemini | Implemented, off unless a key is set |
 | PDF/CSV export, scheduled reminders, native apps | **Not implemented** |
@@ -118,7 +118,7 @@ The spec's worked example is a test case: 156 cm vs 170 cm → **91.8%**, 410 cm
 │   ├── constants.js        protocol parameters, labels, safety copy
 │   ├── scoring.js          the scoring engine (pure, unit-tested)
 │   ├── validation.js       trial validity vocabulary + payload validation
-│   └── landmarks.js        12-point skeleton schema + encode/decode
+│   └── landmarks.js        16-point skeleton schema (arms, shoulders, hips, legs) + encode/decode
 ├── server/                 Express 5 + node:sqlite
 │   ├── db.js               schema + query helpers
 │   ├── auth.js             bcrypt hashing, bearer sessions, roles
@@ -132,7 +132,7 @@ The spec's worked example is a test case: 156 cm vs 170 cm → **91.8%**, 410 cm
 
 **Trust boundaries.** The browser does the pose tracking and trial capture. The server never trusts the client's summary: it re-validates the trials and recomputes every score, status and trend from the submitted measurements before storing anything. A therapist can only read an athlete's data while an active link exists, checked on every route.
 
-**Video never leaves the device.** MediaPipe runs in the page on the camera stream. What is stored per trial is `{ metrics, valid, voidReasons, landmarks }`, where landmarks are 12 named points per frame rounded to four decimals (capped at 360 frames) — enough for the therapist's stick-figure replay.
+**Video never leaves the device.** MediaPipe runs in the page on the camera stream. What is stored per trial is `{ metrics, valid, voidReasons, landmarks }`, where landmarks are 16 named points per frame (both arms, shoulders, hips and legs) rounded to four decimals (capped at 360 frames) — enough for the therapist's stick-figure replay.
 
 **SQLite schema** (see [`server/db.js`](server/db.js)): `users`, `auth_sessions`, `link_codes`, `links`, `assignments`, `test_sessions`, `trials`, `trial_notes`, `decisions`, `exercises`, `plans`, `plan_items`, `plan_completions`. Deleting a user cascades to everything derived from them.
 
@@ -176,24 +176,24 @@ Bearer token in `Authorization: Bearer <token>`. All routes are under `/api`.
 
 Testing one leg means a dozen trials. If each one needs somebody to click a button, the athlete cannot do a session alone — and the person clicking is not watching the movement. Three things fix that:
 
-**Spoken cues, with encouragement.** Every instruction is said out loud (`speechSynthesis`, built into the browser) at the same moment it is drawn on screen in very large type. The athlete hears "ready to go? raise your right hand above your head", "hop when you are ready", "hold it", "rest for six seconds", and the result of each trial — plus a short line of encouragement after each scored trial ("Nice.", "Good rep.", "That looked strong."), rotated so it does not become wallpaper. None of it is a clinical claim: it reacts to the attempt, not to the result.
+**Spoken cues, with encouragement.** Every instruction is said out loud (`speechSynthesis`, built into the browser) at the same moment it is drawn on screen in very large type. The athlete hears "ready to go? raise both hands above your head", "hop when you are ready", "hold it", "rest for six seconds", and the result of each trial — plus a short line of encouragement after each scored trial ("Nice.", "Good rep.", "That looked strong."), rotated so it does not become wallpaper. None of it is a clinical claim: it reacts to the attempt, not to the result.
 
 **A start signal, with the fragile options off by default.** Once the camera is live and the body is fully in frame, the runner uses whichever of these you selected:
 
 | Signal | Notes |
 | --- | --- |
-| 🙋 **Right hand above the head (default)** | A body position, not a gesture classifier: the wrist is compared with the nose using the pose model that is already running. No extra download, no model to be fooled by the lighting. Hold for 0.6 s; either hand works |
+| 🙋 **Both hands above the head (default)** | A body position, not a gesture classifier: both wrists are compared with the nose using the pose model that is already running. No extra download, no model to be fooled by the lighting. Hold for 0.6 s. Requiring both hands means scratching your head cannot start a trial |
 | ⏱ **Automatic** | A spoken "3, 2, 1, go" and the trial starts. Nothing to raise, nothing to press |
 | 🎙 **Saying "ready to go"** | Chrome and Edge only. Off by default, so the microphone is never requested until you turn it on |
 | **Space bar** or the button | Always available, for a solo athlete standing at the laptop |
 
-There is deliberately no thumbs-up classifier in the app any more. It needed a separate 8 MB model and was the least reliable part of a live demo: one more thing that depends on light, distance and background. A raised hand is two landmarks compared to each other.
+There is deliberately no thumbs-up classifier in the app any more. It needed a separate 8 MB model and was the least reliable part of a live demo: one more thing that depends on light, distance and background. Two raised hands are four landmarks compared to each other.
 
 If the cues are silent, the runner tells you why in one line under the video: no speech voices installed, or an embedded preview blocking audio. The **test sound** button plays the ready chime and a spoken check, and the countdown always has a beep behind the words, so a browser with no installed voice still gives audible timing.
 
 **Automatic re-arming.** After a trial finishes the runner says the result, counts down a rest period, and then waits for the next signal by itself. Nothing is clicked between trials. When the leg is complete it says so and stops arming.
 
-Privacy: the microphone is only open while the runner page is live and voice commands are switched on, and only a matched command word is used. No audio or video is recorded, stored or uploaded. The hand-gesture model runs locally too and only its label ("Thumb_Up") is used.
+Privacy: the microphone is only open while the runner page is live and voice commands are switched on, and only a matched command word is used. No audio or video is recorded, stored or uploaded, and the start position is read from landmarks that never leave the page.
 
 Accuracy is unchanged: the trial still has to be detected by the same rules, the same validity checks apply, and the score still comes from `shared/scoring.js`. Hands-free only changes how a trial is started.
 
@@ -202,8 +202,7 @@ Accuracy is unchanged: the trial still has to be detected by the same rules, the
 - **The camera path is software-verified, not clinically validated.** The pose model initialises and returns 33 landmarks, and a full trial runs end to end (take-off, landing, hold, distance, knee flexion) — checked in a real Chromium browser using a synthetic video source, because this development machine has no camera. A physical webcam, phone capture, lighting, and real athlete movement are still unverified, and the UI has not been walked through by hand.
 - **Measurement calibration is a prototype.** Hop distance in centimetres uses the athlete's height (leg length ≈ 0.53 × height) and the standing hip-to-ankle length in pixels as a ruler. The LSI only uses a ratio between legs on the same fixed camera, so a fixed scale error cancels — but the centimetre values have not been validated against a tape measure yet. That validation (and repeated-test reliability) is required before clinical use.
 - **2D pose only.** Frontal-plane valgus and lateral trunk lean are approximations from a single front view, and side-view knee flexion is an image-plane angle. No 3D reconstruction, no force plates.
-- **The start signal is a body position, and unverified with a real body.** "Right hand above the head" compares the wrist with the nose, which is far more tolerant than a gesture classifier, but nobody has raised a hand at a real camera here. The automatic countdown needs nothing at all and is always available as the fallback.
-- **Hands-free start is not yet exercised with real hands.** The gesture model loads and returns its 33-point hand landmarks, and the hold-and-release gate that turns a recognised gesture into a start signal is unit tested, but nobody has raised a real hand at a real camera here. Test thumbs up, open palm and "ready" on the actual demo hardware before relying on them; the space bar and the button always work.
+- **The start signal is a body position, and unverified with a real body.** "Both hands above the head" compares each wrist with the nose, which is far more tolerant than a gesture classifier, but nobody has raised both hands at a real camera here. If a hand leaves the top of the frame its visibility drops and the trigger will not fire, so leave a little headroom above the athlete. The automatic countdown needs nothing at all and is always available as the fallback.
 - **Speech synthesis varies by browser.** Voice, accent and pronunciation come from the operating system. On a machine with no installed voice the cues are silent, which is why every cue is also printed on screen.
 - **Frame rate is the limiting factor.** The full pose model is the accurate default; on a device that cannot hold ~24 fps the preflight offers a faster model. Below 24 fps trials are voided rather than scored, which is correct but frustrating — hops are fast, so 60 fps capture is strongly preferred.
 - **Phase detection is heuristic.** Landing-not-held and tracking-lost are detected in the browser; other-foot-touchdown and pausing-between-hops are best-effort and are there for the therapist to verify in the replay. Low frame rate (< 24 fps) voids the trial; 24–30 fps is recorded with a warning. Hops are fast, so 60 fps is strongly preferred.

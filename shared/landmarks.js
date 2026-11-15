@@ -1,13 +1,19 @@
 /**
  * Stored landmark format.
  *
- * Only 12 named points per frame are kept, rounded to 4 decimals, so a trial
- * replays as a skeleton without ever storing video or images.
+ * 16 named points per frame (the whole upper body and both legs), rounded to 4
+ * decimals, so a trial replays as a skeleton without ever storing video or
+ * images. The arms are kept because the start signal is a raised-hand position
+ * and because a therapist reviewing a landing wants to see what the arms did.
  */
 
 export const LANDMARK_POINTS = [
   'leftShoulder',
   'rightShoulder',
+  'leftElbow',
+  'rightElbow',
+  'leftWrist',
+  'rightWrist',
   'leftHip',
   'rightHip',
   'leftKnee',
@@ -29,10 +35,12 @@ export const LANDMARK_POINTS = [
  */
 export const MEDIAPIPE_INDEX = {
   nose: 0,
-  leftWrist: 15,
-  rightWrist: 16,
   leftShoulder: 11,
   rightShoulder: 12,
+  leftElbow: 13,
+  rightElbow: 14,
+  leftWrist: 15,
+  rightWrist: 16,
   leftHip: 23,
   rightHip: 24,
   leftKnee: 25,
@@ -48,6 +56,10 @@ export const MEDIAPIPE_INDEX = {
 /** Edges drawn by the live overlay and the replay canvas. */
 export const SKELETON_EDGES = [
   ['leftShoulder', 'rightShoulder'],
+  ['leftShoulder', 'leftElbow'],
+  ['leftElbow', 'leftWrist'],
+  ['rightShoulder', 'rightElbow'],
+  ['rightElbow', 'rightWrist'],
   ['leftShoulder', 'leftHip'],
   ['rightShoulder', 'rightHip'],
   ['leftHip', 'rightHip'],
@@ -79,9 +91,11 @@ export function encodeFrame(landmarks, { minVisibility = MIN_VISIBILITY } = {}) 
 export function decodeFrame(frame) {
   const points = {};
   LANDMARK_POINTS.forEach((name, index) => {
-    const x = frame[index * 3];
-    const y = frame[index * 3 + 1];
-    const v = frame[index * 3 + 2];
+    // Trials stored before the arms were included are shorter than the current
+    // schema; missing values must read as "not visible" instead of NaN.
+    const x = Number.isFinite(frame[index * 3]) ? frame[index * 3] : -1;
+    const y = Number.isFinite(frame[index * 3 + 1]) ? frame[index * 3 + 1] : -1;
+    const v = Number.isFinite(frame[index * 3 + 2]) ? frame[index * 3 + 2] : 0;
     points[name] = { x, y, v, visible: x >= 0 && y >= 0 && v > 0 };
   });
   return points;

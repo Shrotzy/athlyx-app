@@ -2,9 +2,14 @@
  * Start trigger from body position — no gesture classifier, no extra model.
  *
  * The pose model already running for the measurement produces the wrists, nose
- * and shoulders, so "a hand above the head" is a comparison of two numbers
+ * and shoulders, so "both hands above the head" is a comparison of numbers
  * instead of an 8 MB classifier that has to be trained on lighting, distance
- * and background. That is why this is the recommended signal.
+ * and background.
+ *
+ * Both hands are required: two raised arms are a deliberate, unmistakable pose,
+ * so an athlete adjusting a shirt or scratching their head cannot start a trial
+ * by accident. It also gives the camera a clean, symmetric frame before the
+ * movement begins.
  *
  * Coordinates are normalised 0..1 with y growing downwards, as MediaPipe emits,
  * so a smaller y is higher up. Kept free of MediaPipe imports so it is unit
@@ -29,14 +34,13 @@ function wristAboveHead(points, side) {
 }
 
 /**
- * @returns {{any: boolean, left: boolean, right: boolean}}
- *   `any` accepts either hand, which is friendlier for a left-handed athlete or
- *   an operated shoulder that cannot lift. The spoken instruction names the
- *   right hand so there is one unambiguous thing to demonstrate.
+ * @returns {{both: boolean, left: boolean, right: boolean}}
+ *   `both` is the start signal; the sides are reported so the screen can say
+ *   which hand still needs to come up.
  */
-export function handAboveHead(points) {
-  if (!points) return { any: false, left: false, right: false };
+export function handsAboveHead(points) {
+  if (!points) return { both: false, left: false, right: false };
   const left = wristAboveHead(points, 'left');
   const right = wristAboveHead(points, 'right');
-  return { any: left || right, left, right };
+  return { both: left && right, left, right };
 }
