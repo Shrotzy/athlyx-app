@@ -28,6 +28,8 @@ The app asks for the operated leg once, in the athlete's account, and maps every
 
 The runner gates on a preflight check: the camera must be live, and the shoulders, hips, knees, ankles and toes must all be visible. It also displays the resolution, the frame rate the track reports, and the measured processing rate, because a trial without visible feet cannot be measured and a low frame rate voids trials after the fact.
 
+How a trial starts is separate from how it is measured. A trial can be started by a button, the space bar, a held hand gesture (thumbs up or open palm) or a spoken "ready". With hands-free start enabled the runner also re-arms itself after each rest period, so the athlete can complete a leg alone. This changes nothing about detection or scoring: every trial still has to satisfy the same phase rules and the same validity checks before it counts, and a trial that cannot be measured is still voided rather than scored.
+
 Two pose models are available. The full model is the accurate default; the lite model is several times faster and is the practical choice on a phone or a browser without GPU acceleration. Switching mid-session keeps the same camera and camera position, so the leg-to-leg ratio is unaffected.
 
 ---
@@ -99,6 +101,7 @@ Consequences worth stating plainly to a clinician:
 
 ## Validation still required (before any clinical use)
 
+0. **Hands-free start and hardware capture**: the hand-gesture model and its hold-and-release gate have been tested in software, but not with a real hand in front of a real camera. The firmware of the demo device should be checked with the athlete before the session (thumbs up, open palm, and the space-bar fallback). Likewise the voice-command path, which uses the browser's speech recognition and is only available in Chrome and Edge.
 0. **Hardware capture**: the software path (model init, 33 landmarks, phase detection, trial submission) has been run in a real browser against a synthetic video source. A physical webcam, a phone camera, real lighting and real athlete movement have not been tested.
 1. **Tape-measure agreement**: hop distances from the app vs a tape measure, across repeat trials on the same person.
 2. **Repeated-test reliability**: within-session and between-session variability, to calibrate the borderline band against real measurement noise.

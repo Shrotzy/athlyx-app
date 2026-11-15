@@ -107,6 +107,16 @@ CREATE TABLE IF NOT EXISTS decisions (
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+CREATE TABLE IF NOT EXISTS session_debriefs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  test_session_id INTEGER NOT NULL REFERENCES test_sessions(id) ON DELETE CASCADE,
+  audience TEXT NOT NULL CHECK (audience IN ('athlete', 'therapist')),
+  text TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE UNIQUE INDEX IF NOT EXISTS session_debriefs_unique
+  ON session_debriefs(test_session_id, audience);
+
 CREATE TABLE IF NOT EXISTS exercises (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   owner_therapist_id INTEGER REFERENCES users(id) ON DELETE CASCADE,

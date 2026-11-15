@@ -61,6 +61,88 @@ Rules you must follow:
 - Mention that scores can fall within measurement noise from a 2D camera.
 - Keep it to 3 short paragraphs at most and end by saying the therapist reviews the results.`;
 
+/**
+ * Per-test, per-leg counts and spread. Computed here from stored trials so the
+ * model is only ever paraphrasing numbers that already exist.
+ */
+export function buildTrialFacts(trials = []) {
+  const grouped = new Map();
+  for (const trial of trials) {
+    const key = `${trial.test} / ${trial.leg}`;
+    if (!grouped.has(key)) grouped.set(key, []);
+    grouped.get(key).push(trial);
+  }
+
+  const lines = [];
+  for (const [key, list] of grouped) {
+    const valid = list.filter((trial) => trial.valid);
+    const voided = list.length - valid.length;
+    let line = `${key}: ${list.length} attempts, ${valid.length} valid, ${voided} voided`;
+
+    const distances = valid
+      .map((trial) => trial.metrics?.hopDistanceCm)
+      .filter((value) => Number.isFinite(value));
+    if (distances.length > 1) {
+      const lowest = Math.min(...distances);
+      const highest = Math.max(...distances);
+      line += `; hop distances ${lowest} to ${highest} cm (spread ${Math.round((highest - lowest) * 10) / 10} cm)`;
+    }
+
+    const flexions = valid
+      .map((trial) => trial.metrics?.kneeFlexionDeg)
+      .filter((value) => Number.isFinite(value));
+    if (flexions.length > 1) {
+      line += `; landing knee flexion ${Math.min(...flexions)} to ${Math.max(...flexions)} degrees`;
+    }
+
+    const valgus = valid.map((trial) => trial.metrics?.valgusDeg).filter((value) => Number.isFinite(value));
+    if (valgus.length > 1) {
+      line += `; peak valgus ${Math.min(...valgus)} to ${Math.max(...valgus)} degrees`;
+    }
+
+    const reasons = [...new Set(list.flatMap((trial) => trial.voidReasons || []))];
+    if (reasons.length > 0) line += `; reasons trials were voided: ${reasons.join(', ')}`;
+    lines.push(line);
+  }
+  return lines;
+}
+
+const DEBRIEF_INSTRUCTION = `You write a short spoken debrief after one ATHLYx check-in, read aloud to a rehabilitating athlete or their physical therapist at the end of a session.
+
+Rules you must follow:
+- Use only the numbers you are given. Never calculate, estimate, average or invent a value.
+- Never state or imply a diagnosis, healing status, readiness for sport, or return-to-sport clearance.
+- Never prescribe exercises, sets, reps, loading or a treatment plan.
+- The app's criteria status comes from fixed rules and is final; do not reinterpret or contradict it.
+- Be concrete: refer to the tests, the legs and the numbers by name.
+- Say plainly when a result is within measurement noise from a 2D camera, and when fewer valid trials make a score less certain.
+- Write 3 to 4 short sentences, then one final sentence naming what the therapist should look at. No headings, no bullet points, no lists.
+- Address the athlete as "you" when the audience is the athlete; otherwise address the therapist.
+- Do not end by offering further help, and do not mention that you are an AI model.`;
+
+/**
+ * Post-session debrief. Explains a session that has already been scored, plus
+ * how it compares with the previous one. Never scores anything.
+ */
+export async function summarizeSession(facts, { audience = 'athlete' } = {}) {
+  if (!geminiAvailable()) return null;
+
+  const prompt = `Audience: ${audience === 'therapist' ? 'physical therapist' : 'the athlete'}.\n\nEverything below was measured and scored before you were called:\n${facts.join('\n')}`;
+
+  const response = await getClient().models.generateContent({
+    model,
+    contents: prompt,
+    config: {
+      systemInstruction: DEBRIEF_INSTRUCTION,
+      temperature: 0.35,
+      maxOutputTokens: 600,
+    },
+  });
+
+  const text = response?.text?.trim();
+  return text || null;
+}
+
 export async function explainResults(results, { audience = 'athlete' } = {}) {
   if (!geminiAvailable()) return null;
 

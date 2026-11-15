@@ -12,6 +12,7 @@ import {
 } from '../components/common.jsx';
 import { api } from '../lib/api.js';
 import { useAuth } from '../lib/auth.jsx';
+import { cancelSpeech, speak, unlockVoice, voiceSupported } from '../lib/voice.js';
 import { DECISIONS, DECISION_LABEL, LEGS, ROLES, STATUS_LABEL, TEST_LIST, TEST_META } from '@shared/constants.js';
 import { VOID_REASONS } from '@shared/validation.js';
 import { decodeLandmarks } from '@shared/landmarks.js';
@@ -92,6 +93,9 @@ export default function SessionDetail() {
   const [busy, setBusy] = useState(false);
   const [explanation, setExplanation] = useState(null);
   const [explainError, setExplainError] = useState(null);
+  const [debrief, setDebrief] = useState(null);
+  const [debriefState, setDebriefState] = useState('idle'); // idle | loading | ready | unavailable
+  const [debriefError, setDebriefError] = useState(null);
   const [decision, setDecision] = useState(DECISIONS.CONFIRM);
   const [decisionNote, setDecisionNote] = useState('');
 
@@ -116,6 +120,50 @@ export default function SessionDetail() {
       cancelled = true;
     };
   }, [id]);
+
+  // Show a debrief that was already generated, without paying for a new one.
+  useEffect(() => {
+    let cancelled = false;
+    if (!session) return undefined;
+    api
+      .post('/insights/debrief', {
+        sessionId: Number(id),
+        audience: user.role === ROLES.THERAPIST ? 'therapist' : 'athlete',
+        cachedOnly: true,
+      })
+      .then((data) => {
+        if (cancelled) return;
+        if (data.debrief) {
+          setDebrief(data.debrief);
+          setDebriefState('ready');
+        } else if (data.aiAvailable === false) {
+          setDebriefState('unavailable');
+        }
+      })
+      .catch((problem) => {
+        if (!cancelled && problem?.status === 503) setDebriefState('unavailable');
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [session, id, user.role]);
+
+  const generateDebrief = async (refresh = false) => {
+    setDebriefError(null);
+    setDebriefState('loading');
+    try {
+      const data = await api.post('/insights/debrief', {
+        sessionId: Number(id),
+        audience: isTherapist ? 'therapist' : 'athlete',
+        refresh,
+      });
+      setDebrief(data.debrief);
+      setDebriefState('ready');
+    } catch (problem) {
+      setDebriefError(problem.message);
+      setDebriefState(problem?.status === 503 ? 'unavailable' : 'idle');
+    }
+  };
 
   const selectedTrial = useMemo(
     () => session?.trials.find((trial) => trial.id === selectedTrialId) || null,
@@ -277,6 +325,51 @@ export default function SessionDetail() {
           </p>
         </div>
       )}
+
+      <section className="card stack">
+        <div className="row between">
+          <h2 style={{ margin: 0 }}>AI debrief</h2>
+          <span className="tag">{debrief ? 'explains the session — never scores it' : 'optional'}</span>
+        </div>
+        <p className="muted small" style={{ margin: 0 }}>
+          A short spoken-style summary of this check-in: what the numbers were, how consistent the trials were, and
+          how this session compares with the last one. It only paraphrases measurements that were already scored. It
+          cannot change a score or the criteria status, and it does not diagnose or prescribe. Worth reading aloud
+          straight after the session.
+        </p>
+        {debriefState === 'unavailable' ? (
+          <p className="muted small" style={{ margin: 0 }}>
+            AI features need a <span className="mono">GEMINI_API_KEY</span> on the server. Every measurement, score and
+            status above is unaffected.
+          </p>
+        ) : null}
+        {debrief ? <p className="notice">{debrief}</p> : null}
+        {debriefState === 'loading' ? <p className="muted small">Writing the debrief…</p> : null}
+        {debriefError ? <div className="error">{debriefError}</div> : null}
+        <div className="row">
+          <button
+            className="button"
+            type="button"
+            onClick={() => generateDebrief(Boolean(debrief))}
+            disabled={busy || debriefState === 'loading' || debriefState === 'unavailable'}
+          >
+            {debriefState === 'loading' ? 'Working…' : debrief ? 'Regenerate' : 'Generate debrief'}
+          </button>
+          {debrief && voiceSupported() ? (
+            <button
+              className="button ghost small"
+              type="button"
+              onClick={() => {
+                unlockVoice();
+                cancelSpeech();
+                speak(debrief);
+              }}
+            >
+              Read aloud
+            </button>
+          ) : null}
+        </div>
+      </section>
 
       <div className="grid-3">
         {TEST_LIST.map((test) => {

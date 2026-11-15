@@ -22,6 +22,9 @@ This repository is the working foundation for the project described in [docs/SPE
 | Live pose tracking, phase detection, trial capture in the browser | Implemented; pose pipeline and trial loop verified in a real browser (see [Limitations](#limitations)) |
 | Therapist review: scores, marker breakdown, trial notes, decision, skeleton replay | Implemented |
 | Exercise library, custom exercises, plans, completion tracking | Implemented (library is demo content) |
+| Spoken cues and large on-screen instructions | Implemented — browser speech synthesis, no key or audio files |
+| Hands-free trial start: thumbs up, open palm, voice command, or space bar | Implemented |
+| Post-session AI debrief (what was measured, spread, change since last check-in) | Implemented, off unless a key is set, cached per check-in |
 | Optional plain-language explanations via Gemini | Implemented, off unless a key is set |
 | PDF/CSV export, scheduled reminders, native apps | **Not implemented** |
 
@@ -154,6 +157,7 @@ Bearer token in `Authorization: Bearer <token>`. All routes are under `/api`.
 | `GET/POST /exercises` | therapist | Library plus custom exercises |
 | `GET/POST /plans`, `GET /plans/:id`, `POST /plans/:id/items/:itemId/complete` | role-aware | Plans and completion |
 | `POST /insights/explain` | linked | Optional Gemini explanation (503 without a key) |
+| `POST /insights/debrief` | linked | Optional post-session debrief, cached per session and audience (503 without a key) |
 | `GET /health` | public | Liveness and whether Gemini is configured |
 
 ---
@@ -168,11 +172,33 @@ Bearer token in `Authorization: Bearer <token>`. All routes are under `/api`.
 
 ---
 
+## Hands-free running (no second person at the laptop)
+
+Testing one leg means a dozen trials. If each one needs somebody to click a button, the athlete cannot do a session alone — and the person clicking is not watching the movement. Three things fix that:
+
+**Spoken cues.** Every instruction is said out loud (`speechSynthesis`, built into the browser) at the same moment it is drawn on screen in very large type. The athlete hears "hop when you are ready", "hold it", "rest for six seconds", and the result of each trial, without looking at a monitor at all.
+
+**A start signal the athlete controls.** Once the camera is live and the body is fully in frame, the runner waits for one of:
+
+| Signal | Notes |
+| --- | --- |
+| ✋ **Thumbs up** or **open palm** | MediaPipe's gesture recogniser, held for 0.6 s. Needs the 8 MB hand model, which loads lazily and only while hands-free is on |
+| 🎙 **Saying "ready"** | Chrome and Edge only. Off by default, so the microphone is never requested until you turn it on |
+| **Space bar** | Always available, for a solo athlete standing at the laptop |
+
+**Automatic re-arming.** After a trial finishes the runner says the result, counts down a rest period, and then waits for the next signal by itself. Nothing is clicked between trials. When the leg is complete it says so and stops arming.
+
+Privacy: the microphone is only open while the runner page is live and voice commands are switched on, and only a matched command word is used. No audio or video is recorded, stored or uploaded. The hand-gesture model runs locally too and only its label ("Thumb_Up") is used.
+
+Accuracy is unchanged: the trial still has to be detected by the same rules, the same validity checks apply, and the score still comes from `shared/scoring.js`. Hands-free only changes how a trial is started.
+
 ## Limitations
 
 - **The camera path is software-verified, not clinically validated.** The pose model initialises and returns 33 landmarks, and a full trial runs end to end (take-off, landing, hold, distance, knee flexion) — checked in a real Chromium browser using a synthetic video source, because this development machine has no camera. A physical webcam, phone capture, lighting, and real athlete movement are still unverified, and the UI has not been walked through by hand.
 - **Measurement calibration is a prototype.** Hop distance in centimetres uses the athlete's height (leg length ≈ 0.53 × height) and the standing hip-to-ankle length in pixels as a ruler. The LSI only uses a ratio between legs on the same fixed camera, so a fixed scale error cancels — but the centimetre values have not been validated against a tape measure yet. That validation (and repeated-test reliability) is required before clinical use.
 - **2D pose only.** Frontal-plane valgus and lateral trunk lean are approximations from a single front view, and side-view knee flexion is an image-plane angle. No 3D reconstruction, no force plates.
+- **Hands-free start is not yet exercised with real hands.** The gesture model loads and returns its 33-point hand landmarks, and the hold-and-release gate that turns a recognised gesture into a start signal is unit tested, but nobody has raised a real hand at a real camera here. Test thumbs up, open palm and "ready" on the actual demo hardware before relying on them; the space bar and the button always work.
+- **Speech synthesis varies by browser.** Voice, accent and pronunciation come from the operating system. On a machine with no installed voice the cues are silent, which is why every cue is also printed on screen.
 - **Frame rate is the limiting factor.** The full pose model is the accurate default; on a device that cannot hold ~24 fps the preflight offers a faster model. Below 24 fps trials are voided rather than scored, which is correct but frustrating — hops are fast, so 60 fps capture is strongly preferred.
 - **Phase detection is heuristic.** Landing-not-held and tracking-lost are detected in the browser; other-foot-touchdown and pausing-between-hops are best-effort and are there for the therapist to verify in the replay. Low frame rate (< 24 fps) voids the trial; 24–30 fps is recorded with a warning. Hops are fast, so 60 fps is strongly preferred.
 - **The exercise library is demo content**, labelled as such, and must be replaced or verified against a clinic protocol before use. Exercises are always chosen by the therapist.
