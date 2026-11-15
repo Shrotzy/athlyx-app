@@ -20,8 +20,16 @@ export const LANDMARK_POINTS = [
   'rightToe',
 ];
 
-/** MediaPipe Pose Landmarker indices for the points we keep. */
+/**
+ * MediaPipe Pose Landmarker indices for the points we keep.
+ *
+ * The wrists are here for live logic only (a raised hand is a hands-free start
+ * signal). They are deliberately not in LANDMARK_POINTS, so stored trials and
+ * the replay format are unchanged.
+ */
 export const MEDIAPIPE_INDEX = {
+  leftWrist: 15,
+  rightWrist: 16,
   leftShoulder: 11,
   rightShoulder: 12,
   leftHip: 23,

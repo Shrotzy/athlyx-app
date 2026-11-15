@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import { createGestureGate, START_GESTURES } from '../src/lib/gesture-gate.js';
+import { createGestureGate, createHoldGate, START_GESTURES } from '../src/lib/gesture-gate.js';
+import { handsRaised } from '../src/lib/pose-raised.js';
 import { parseCommand } from '../src/lib/voice-commands.js';
 
 describe('gesture gate', () => {
@@ -64,6 +65,62 @@ describe('gesture gate', () => {
 
   it('only accepts the two documented start gestures', () => {
     expect(START_GESTURES).toEqual(['Thumb_Up', 'Open_Palm']);
+  });
+});
+
+describe('raise-hand gate', () => {
+  it('fires after the hand has been up long enough, then waits for a release', () => {
+    const gate = createHoldGate({ holdMs: 400 });
+    expect(gate.update(true, 0).fired).toBe(false);
+    expect(gate.update(true, 200).fired).toBe(false);
+    expect(gate.update(true, 450).fired).toBe(true);
+    expect(gate.update(true, 900).fired).toBe(false);
+    gate.update(false, 1000);
+    // The 1.2 s cooldown from the first fire has to elapse too.
+    expect(gate.update(true, 1100).fired).toBe(false);
+    expect(gate.update(true, 1600).fired).toBe(false);
+    expect(gate.update(true, 1650).fired).toBe(true);
+  });
+
+  it('does not fire for a hand that passes through', () => {
+    const gate = createHoldGate({ holdMs: 400 });
+    expect(gate.update(true, 0).fired).toBe(false);
+    expect(gate.update(true, 200).fired).toBe(false);
+    gate.update(false, 250);
+    expect(gate.update(true, 300).fired).toBe(false);
+    expect(gate.update(true, 600).fired).toBe(false);
+    expect(gate.update(true, 850).fired).toBe(true);
+  });
+});
+
+describe('handsRaised', () => {
+  const point = (x, y, visible = true) => ({ x, y, v: 1, visible });
+
+  it('detects a hand above the shoulder on either side', () => {
+    const points = {
+      leftShoulder: point(0.4, 0.3),
+      rightShoulder: point(0.6, 0.3),
+      leftWrist: point(0.35, 0.1),
+      rightWrist: point(0.65, 0.5),
+    };
+    expect(handsRaised(points)).toMatchObject({ any: true, left: true, right: false });
+  });
+
+  it('ignores a hand at chest height', () => {
+    const points = {
+      leftShoulder: point(0.4, 0.3),
+      rightShoulder: point(0.6, 0.3),
+      leftWrist: point(0.35, 0.42),
+      rightWrist: point(0.65, 0.45),
+    };
+    expect(handsRaised(points).any).toBe(false);
+  });
+
+  it('needs a visible wrist and shoulder', () => {
+    const hidden = { x: 0.3, y: 0.1, v: 0.1, visible: false };
+    const points = { leftShoulder: point(0.4, 0.3), leftWrist: hidden };
+    expect(handsRaised(points).any).toBe(false);
+    expect(handsRaised(null).any).toBe(false);
   });
 });
 

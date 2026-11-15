@@ -114,6 +114,71 @@ export function speak(text, { interrupt = true, rate = 1.02 } = {}) {
   }
 }
 
+let audioContext = null;
+
+function getAudioContext() {
+  if (typeof window === 'undefined') return null;
+  const Impl = window.AudioContext || window.webkitAudioContext;
+  if (!Impl) return null;
+  try {
+    if (!audioContext) audioContext = new Impl();
+    if (audioContext.state === 'suspended') audioContext.resume().catch(() => {});
+    return audioContext;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * A short beep cue. This is the fallback that keeps the countdown usable when
+ * a browser has no installed speech voices, or when an embedded preview blocks
+ * audio: two rising notes mean "go".
+ */
+export function chime(kind = 'tick') {
+  if (muted) return;
+  const context = getAudioContext();
+  if (!context) return;
+  const start = context.currentTime;
+  const notes = kind === 'go' ? [660, 990] : kind === 'ready' ? [520, 700] : [520];
+
+  notes.forEach((frequency, index) => {
+    const at = start + index * 0.12;
+    const oscillator = context.createOscillator();
+    const gain = context.createGain();
+    oscillator.type = 'sine';
+    oscillator.frequency.value = frequency;
+    gain.gain.setValueAtTime(0.0001, at);
+    gain.gain.exponentialRampToValueAtTime(0.16, at + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.0001, at + 0.17);
+    oscillator.connect(gain).connect(context.destination);
+    oscillator.start(at);
+    oscillator.stop(at + 0.2);
+  });
+}
+
+/**
+ * What is actually available right now, so a silent cue can be explained
+ * instead of guessed at.
+ */
+export function voiceDiagnostics() {
+  const supported = voiceSupported();
+  let voiceCount = 0;
+  if (supported) {
+    try {
+      voiceCount = (window.speechSynthesis.getVoices?.() || []).length;
+    } catch {
+      voiceCount = 0;
+    }
+  }
+  let embedded = false;
+  try {
+    embedded = window.self !== window.top;
+  } catch {
+    embedded = true;
+  }
+  return { supported, voiceCount, muted, embedded };
+}
+
 /** Spoken versions of the on-screen cue text. Kept together so they never drift. */
 export const CUES = {
   practiceIntro: 'This is a practice trial. It is not scored.',

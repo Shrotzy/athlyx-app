@@ -10,6 +10,42 @@
  * starting five trials in a row.
  */
 
+/**
+ * The same hold-and-release logic for a plain boolean signal, such as "a hand
+ * is raised", which the pose model already gives us. Shorter hold than the
+ * gesture classifier because a raised hand is unambiguous.
+ */
+export function createHoldGate({ holdMs = 400, cooldownMs = 1200 } = {}) {
+  let activeSince = null;
+  let firedAt = -Infinity;
+  let waitingForRelease = false;
+
+  return {
+    reset() {
+      activeSince = null;
+      firedAt = -Infinity;
+      waitingForRelease = false;
+    },
+    update(active, now) {
+      if (!active) {
+        activeSince = null;
+        waitingForRelease = false;
+        return { fired: false, progress: 0, active: false };
+      }
+      if (activeSince == null) activeSince = now;
+      if (waitingForRelease) return { fired: false, progress: 1, active: true };
+
+      const elapsed = now - activeSince;
+      if (elapsed >= holdMs && now - firedAt >= cooldownMs) {
+        firedAt = now;
+        waitingForRelease = true;
+        return { fired: true, progress: 1, active: true };
+      }
+      return { fired: false, progress: Math.min(1, elapsed / holdMs), active: true };
+    },
+  };
+}
+
 /** Gestures accepted as "I am ready", from MediaPipe's canned classifier. */
 export const START_GESTURES = ['Thumb_Up', 'Open_Palm'];
 

@@ -178,13 +178,17 @@ Testing one leg means a dozen trials. If each one needs somebody to click a butt
 
 **Spoken cues.** Every instruction is said out loud (`speechSynthesis`, built into the browser) at the same moment it is drawn on screen in very large type. The athlete hears "hop when you are ready", "hold it", "rest for six seconds", and the result of each trial, without looking at a monitor at all.
 
-**A start signal the athlete controls.** Once the camera is live and the body is fully in frame, the runner waits for one of:
+**A start signal, with the fragile options off by default.** Once the camera is live and the body is fully in frame, the runner uses whichever of these you selected:
 
 | Signal | Notes |
 | --- | --- |
-| ✋ **Thumbs up** or **open palm** | MediaPipe's gesture recogniser, held for 0.6 s. Needs the 8 MB hand model, which loads lazily and only while hands-free is on |
+| ⏱ **Automatic (default)** | A spoken "3, 2, 1, go" and the trial starts. No gesture, no model download, nothing that depends on lighting |
+| ✋ **Raise a hand** | A hand above the shoulder for 0.4 s, read from the pose model that is already running. No extra download |
+| 👍 **Thumbs up / open palm** | MediaPipe's gesture classifier, held for 0.45 s. Needs a separate 8 MB model, loaded lazily and only in this mode. The most sensitive to light, distance and background |
 | 🎙 **Saying "ready"** | Chrome and Edge only. Off by default, so the microphone is never requested until you turn it on |
-| **Space bar** | Always available, for a solo athlete standing at the laptop |
+| **Space bar** or the button | Always available, for a solo athlete standing at the laptop |
+
+If the cues are silent, the runner tells you why in one line under the video: no speech voices installed, or an embedded preview blocking audio. The **test sound** button plays the ready chime and a spoken check, and the countdown always has a beep behind the words, so a browser with no installed voice still gives audible timing.
 
 **Automatic re-arming.** After a trial finishes the runner says the result, counts down a rest period, and then waits for the next signal by itself. Nothing is clicked between trials. When the leg is complete it says so and stops arming.
 
@@ -197,6 +201,7 @@ Accuracy is unchanged: the trial still has to be detected by the same rules, the
 - **The camera path is software-verified, not clinically validated.** The pose model initialises and returns 33 landmarks, and a full trial runs end to end (take-off, landing, hold, distance, knee flexion) — checked in a real Chromium browser using a synthetic video source, because this development machine has no camera. A physical webcam, phone capture, lighting, and real athlete movement are still unverified, and the UI has not been walked through by hand.
 - **Measurement calibration is a prototype.** Hop distance in centimetres uses the athlete's height (leg length ≈ 0.53 × height) and the standing hip-to-ankle length in pixels as a ruler. The LSI only uses a ratio between legs on the same fixed camera, so a fixed scale error cancels — but the centimetre values have not been validated against a tape measure yet. That validation (and repeated-test reliability) is required before clinical use.
 - **2D pose only.** Frontal-plane valgus and lateral trunk lean are approximations from a single front view, and side-view knee flexion is an image-plane angle. No 3D reconstruction, no force plates.
+- **Automatic mode is the safe default.** Thumbs-up classification is the weakest signal of the three: it needs decent light, a clear hand at mid-distance and a plain background. That is why it is not the default, and why the automatic countdown and "raise a hand" exist.
 - **Hands-free start is not yet exercised with real hands.** The gesture model loads and returns its 33-point hand landmarks, and the hold-and-release gate that turns a recognised gesture into a start signal is unit tested, but nobody has raised a real hand at a real camera here. Test thumbs up, open palm and "ready" on the actual demo hardware before relying on them; the space bar and the button always work.
 - **Speech synthesis varies by browser.** Voice, accent and pronunciation come from the operating system. On a machine with no installed voice the cues are silent, which is why every cue is also printed on screen.
 - **Frame rate is the limiting factor.** The full pose model is the accurate default; on a device that cannot hold ~24 fps the preflight offers a faster model. Below 24 fps trials are voided rather than scored, which is correct but frustrating — hops are fast, so 60 fps capture is strongly preferred.

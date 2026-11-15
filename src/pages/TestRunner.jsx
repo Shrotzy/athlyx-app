@@ -14,13 +14,24 @@ import {
   createFpsMeter,
   createPoseLandmarker,
   describeCameraError,
+  handsRaised,
   namedPoints,
   startCamera,
   stopCamera,
 } from '../lib/pose.js';
 import { bestGesture, closeGestureRecognizer, createGestureRecognizer } from '../lib/gesture.js';
-import { createGestureGate } from '../lib/gesture-gate.js';
-import { CUES, cancelSpeech, setVoiceMuted, speak, unlockVoice, voiceMuted, voiceSupported } from '../lib/voice.js';
+import { createGestureGate, createHoldGate } from '../lib/gesture-gate.js';
+import {
+  CUES,
+  cancelSpeech,
+  chime,
+  setVoiceMuted,
+  speak,
+  unlockVoice,
+  voiceDiagnostics,
+  voiceMuted,
+  voiceSupported,
+} from '../lib/voice.js';
 import { commandSupport, createVoiceCommands } from '../lib/voice-commands.js';
 import { LEGS, PARAMS, SIDES, TESTS, TEST_META } from '@shared/constants.js';
 import { isValidTrial } from '@shared/validation.js';
@@ -33,8 +44,36 @@ const REST_SECONDS = 6;
 /** How often the hand-gesture model runs while it is waiting for a gesture. */
 const GESTURE_CHECK_MS = 140;
 
-const HANDS_FREE_KEY = 'athlyx.handsfree';
 const VOICE_COMMANDS_KEY = 'athlyx.voicecommands';
+const SIGNAL_KEY = 'athlyx.signal';
+
+/**
+ * How a trial starts.
+ *
+ * `auto` needs no signal at all: a spoken countdown runs and the trial starts
+ * itself. `hand` is a hand above the shoulder, read from the pose model that is
+ * already running. `thumb` uses the separate gesture model.
+ *
+ * `auto` is the default on purpose: it is the only one that cannot fail because
+ * of the lighting, the distance from the camera, or a heavy accent.
+ */
+const SIGNAL_MODES = [
+  ['auto', '⏱ automatic'],
+  ['hand', '✋ raise a hand'],
+  ['thumb', '👍 thumbs up'],
+];
+
+const SIGNAL_DETAIL = {
+  auto: 'Starts automatically',
+  hand: 'Raise a hand to start',
+  thumb: 'Thumbs up or open palm to start',
+};
+
+const SIGNAL_STATUS = {
+  auto: 'Automatic: a spoken 3-2-1 starts each trial. Nothing to press, nothing to learn.',
+  hand: 'Raise either hand above your shoulder for half a second to start a trial.',
+  thumb: 'Hold a thumbs up or an open palm for half a second. Needs the separate hand model.',
+};
 
 function readFlag(key, fallback) {
   try {
@@ -51,6 +90,15 @@ function writeFlag(key, value) {
     localStorage.setItem(key, value ? '1' : '0');
   } catch {
     /* private mode */
+  }
+}
+
+function readSignal() {
+  try {
+    const stored = localStorage.getItem(SIGNAL_KEY);
+    return ['auto', 'hand', 'thumb'].includes(stored) ? stored : 'auto';
+  } catch {
+    return 'auto';
   }
 }
 
@@ -106,11 +154,13 @@ export default function TestRunner() {
   const startTrialRef = useRef(null);
   const bodyCheckRef = useRef({ ok: false, missing: [] });
   const readyRef = useRef(false);
-  const handsFreeRef = useRef(false);
-  const autoArmRef = useRef(true);
-  const gateRef = useRef(createGestureGate());
+  const gateRef = useRef(createGestureGate({ holdMs: 450, minScore: 0.5 }));
+  const handGateRef = useRef(createHoldGate());
+  const signalRef = useRef('auto');
   const lastGestureAtRef = useRef(0);
   const restTimerRef = useRef(0);
+  const autoTimerRef = useRef(0);
+  const autoStartedRef = useRef(false);
   const voiceCommandsRef = useRef(null);
   const spokenHoldRef = useRef(false);
   const lastCuePhaseRef = useRef(null);
@@ -135,7 +185,7 @@ export default function TestRunner() {
   const [holdProgress, setHoldProgress] = useState(0);
   const [gestureStatus, setGestureStatus] = useState('off'); // off | loading | ready | unavailable
   const [voiceOn, setVoiceOn] = useState(() => !voiceMuted() && voiceSupported());
-  const [handsFree, setHandsFree] = useState(() => readFlag(HANDS_FREE_KEY, true));
+  const [signal, setSignal] = useState(readSignal);
   const [voiceCommandsOn, setVoiceCommandsOn] = useState(() => readFlag(VOICE_COMMANDS_KEY, false));
   const [listenStatus, setListenStatus] = useState('off'); // off | listening | blocked | unsupported
   const voiceCommandSupport = useMemo(() => commandSupport(), []);
@@ -144,18 +194,15 @@ export default function TestRunner() {
   const progress = draft ? progressFor(draft, test, leg) : null;
   const isLanding = test === TESTS.SINGLE_LEG_LANDING;
   const bodyCheck = useMemo(() => bodyInFrame(points), [points]);
+  const audio = voiceDiagnostics();
 
   useEffect(() => {
     bodyCheckRef.current = bodyCheck;
   }, [bodyCheck]);
 
   useEffect(() => {
-    handsFreeRef.current = handsFree;
-  }, [handsFree]);
-
-  useEffect(() => {
-    autoArmRef.current = handsFree || (voiceCommandsOn && listenStatus === 'listening');
-  }, [handsFree, voiceCommandsOn, listenStatus]);
+    signalRef.current = signal;
+  }, [signal]);
 
   /** Arm or disarm the "waiting for the athlete's signal" state. */
   const arm = useCallback((value) => {
@@ -177,6 +224,9 @@ export default function TestRunner() {
     recordingRef.current = false;
     clearInterval(restTimerRef.current);
     restTimerRef.current = 0;
+    clearTimeout(autoTimerRef.current);
+    autoTimerRef.current = 0;
+    autoStartedRef.current = false;
     stopCamera(streamRef.current);
     streamRef.current = null;
     landmarkerRef.current?.close?.();
@@ -185,6 +235,7 @@ export default function TestRunner() {
     gestureRef.current = null;
     cancelSpeech();
     gateRef.current.reset();
+    handGateRef.current.reset();
     readyRef.current = false;
     setReady(false);
     setRestLeft(0);
@@ -222,8 +273,9 @@ export default function TestRunner() {
   }, []);
 
   /**
-   * After a trial: say what happened, rest, then re-arm. Nothing has to be
-   * clicked between trials, which is what made this a two-person job.
+   * After a trial: say what happened, rest, then either start the next trial on
+   * its own (automatic mode) or wait for the athlete's signal. Nothing is
+   * clicked either way.
    */
   const scheduleNext = useCallback(
     ({ complete, spoken }) => {
@@ -236,17 +288,11 @@ export default function TestRunner() {
         return;
       }
 
-      if (!autoArmRef.current) {
-        setCue({
-          text: spoken && /voided/i.test(spoken) ? 'TRY AGAIN' : 'TRIAL SAVED',
-          detail: 'Press Start trial when you are ready',
-          tone: 'info',
-        });
-        speak(spoken);
-        return;
-      }
-
-      setCue({ text: 'REST', detail: 'Get back to the start line', tone: 'info' });
+      setCue({
+        text: 'REST',
+        detail: signalRef.current === 'auto' ? 'The next trial starts by itself' : 'Get back to the start line',
+        tone: 'info',
+      });
       speak(`${spoken || ''} ${CUES.rest(REST_SECONDS)}`.trim());
 
       let left = REST_SECONDS;
@@ -254,18 +300,34 @@ export default function TestRunner() {
       restTimerRef.current = setInterval(() => {
         left -= 1;
         setRestLeft(Math.max(0, left));
-        if (left > 0) return;
+
+        if (left > 0) {
+          // Spoken countdown over the last three seconds.
+          if (left <= 3) {
+            speak(String(left), { rate: 1.15 });
+            chime('tick');
+          }
+          return;
+        }
+
         clearInterval(restTimerRef.current);
         restTimerRef.current = 0;
         setRestLeft(0);
-        arm(true);
         gateRef.current.reset();
+        handGateRef.current.reset();
         lastGestureAtRef.current = 0;
-        setCue({
-          text: 'READY',
-          detail: handsFreeRef.current ? 'Thumbs up or open palm to start' : 'Say “ready” to start',
-          tone: 'info',
-        });
+
+        if (signalRef.current === 'auto') {
+          setCue({ text: 'GO', detail: 'Trial started', tone: 'good' });
+          chime('go');
+          speak('Go.');
+          startTrialRef.current?.();
+          return;
+        }
+
+        arm(true);
+        setCue({ text: 'READY', detail: SIGNAL_DETAIL[signalRef.current], tone: 'info' });
+        chime('ready');
         speak(CUES.hopReady);
       }, 1000);
     },
@@ -368,9 +430,12 @@ export default function TestRunner() {
       return;
     }
 
+    clearTimeout(autoTimerRef.current);
+    autoTimerRef.current = 0;
     clearRest();
     arm(false);
     gateRef.current.reset();
+    handGateRef.current.reset();
     trialStartedAtRef.current = performance.now();
     detectorRef.current = isLanding
       ? new LandingTrialDetector({ side, fps: TARGET_FPS })
@@ -395,7 +460,7 @@ export default function TestRunner() {
       detail: !progress?.practice ? 'Practice trial — not scored' : 'Stand still, then go',
       tone: 'info',
     });
-    speak(attemptedPracticeLine(progress) ? `${CUES.practiceIntro} ${startText}` : startText);
+    speak(progress?.practice === false ? `${CUES.practiceIntro} ${startText}` : startText);
   };
 
   useEffect(() => {
@@ -426,21 +491,29 @@ export default function TestRunner() {
         const measuredFps = fpsMeterRef.current.push(now);
         if (measuredFps > 0) setFps(Math.round(measuredFps));
 
-        // Hands-free: look for a raised thumb or palm only while we are
-        // actually waiting for one, and only a few times a second.
-        if (!recordingRef.current && readyRef.current && gestureRef.current) {
-          if (now - lastGestureAtRef.current > GESTURE_CHECK_MS) {
-            lastGestureAtRef.current = now;
-            try {
-              const found = bestGesture(gestureRef.current.recognizeForVideo(video, now));
-              const verdict = gateRef.current.update(found?.name ?? null, found?.score ?? 0, now);
-              setHoldProgress(verdict.progress);
-              if (verdict.fired) {
-                arm(false);
-                startTrialRef.current?.();
+        // Waiting for the athlete's start signal.
+        if (!recordingRef.current && readyRef.current) {
+          if (signalRef.current === 'hand') {
+            const verdict = handGateRef.current.update(handsRaised(named).any, now);
+            setHoldProgress(verdict.progress);
+            if (verdict.fired) {
+              arm(false);
+              startTrialRef.current?.();
+            }
+          } else if (signalRef.current === 'thumb' && gestureRef.current) {
+            if (now - lastGestureAtRef.current > GESTURE_CHECK_MS) {
+              lastGestureAtRef.current = now;
+              try {
+                const found = bestGesture(gestureRef.current.recognizeForVideo(video, now));
+                const verdict = gateRef.current.update(found?.name ?? null, found?.score ?? 0, now);
+                setHoldProgress(verdict.progress);
+                if (verdict.fired) {
+                  arm(false);
+                  startTrialRef.current?.();
+                }
+              } catch (gestureError) {
+                console.warn('[gesture] recognition failed:', gestureError?.message || gestureError);
               }
-            } catch (gestureError) {
-              console.warn('[gesture] recognition failed:', gestureError?.message || gestureError);
             }
           }
         }
@@ -456,7 +529,13 @@ export default function TestRunner() {
           if (nextPhase !== lastCuePhaseRef.current) {
             lastCuePhaseRef.current = nextPhase;
             const big = bigCueFor(nextPhase, isLanding);
-            if (big) setCue({ text: big, detail: null, tone: nextPhase === 'landed' || nextPhase === 'landing' ? 'good' : 'info' });
+            if (big) {
+              setCue({
+                text: big,
+                detail: null,
+                tone: nextPhase === 'landed' || nextPhase === 'landing' ? 'good' : 'info',
+              });
+            }
             if (nextPhase === 'landed' || nextPhase === 'landing') {
               if (!spokenHoldRef.current) {
                 spokenHoldRef.current = true;
@@ -476,6 +555,36 @@ export default function TestRunner() {
 
     rafRef.current = requestAnimationFrame(tick);
   }, [arm, isLanding]);
+
+  /**
+   * Automatic mode: once the athlete is fully in frame, count down out loud and
+   * start the first trial. Later trials are handled by scheduleNext.
+   */
+  useEffect(() => {
+    if (phase !== 'live' || signal !== 'auto' || recording || progress?.complete) return;
+    if (autoStartedRef.current || readyRef.current) return;
+    if (!bodyCheck.ok) return;
+    autoStartedRef.current = true;
+
+    let count = 3;
+    const tick = () => {
+      if (recordingRef.current) return;
+      if (count === 0) {
+        arm(false);
+        setCue({ text: 'GO', detail: 'Trial started', tone: 'good' });
+        chime('go');
+        speak('Go.');
+        startTrialRef.current?.();
+        return;
+      }
+      setCue({ text: String(count), detail: 'Starting automatically — stand still', tone: 'info' });
+      speak(String(count), { rate: 1.15 });
+      chime('tick');
+      count -= 1;
+      autoTimerRef.current = setTimeout(tick, 1000);
+    };
+    autoTimerRef.current = setTimeout(tick, 1200);
+  }, [phase, signal, recording, progress?.complete, bodyCheck.ok, arm]);
 
   const startSession = async () => {
     if (startingRef.current) return;
@@ -501,9 +610,10 @@ export default function TestRunner() {
       streamRef.current = stream;
       setCamera(cameraInfo(stream, videoRef.current));
       setPhase('live');
+      autoStartedRef.current = false;
       loop();
-      setCue({ text: 'READY', detail: 'Thumbs up or open palm to start the practice trial', tone: 'info' });
-      speak('Camera on. Show a thumbs up, or press start, when you are ready.');
+      setCue({ text: 'READY', detail: SIGNAL_DETAIL[signal], tone: 'info' });
+      speak('Camera on. Stand still with your whole body in frame.');
     } catch (problem) {
       console.error('[camera] start failed:', problem);
       setPhase('error');
@@ -558,24 +668,48 @@ export default function TestRunner() {
     if (next) {
       unlockVoice();
       speak('Sound on.');
+      chime('ready');
     }
   };
 
-  const toggleHandsFree = () => {
-    const next = !handsFree;
-    setHandsFree(next);
-    writeFlag(HANDS_FREE_KEY, next);
-    if (!next) {
-      arm(false);
-      setCue({ text: 'READY', detail: 'Press Start trial when you are ready', tone: 'info' });
-      speak('Hands-free start off.');
-    } else {
-      speak('Hands-free start on. Show a thumbs up or an open palm.');
-      setCue({ text: 'READY', detail: 'Thumbs up or open palm to start', tone: 'info' });
-      if (phase === 'live') {
+  /** Lets the athlete (or the demo audience) hear exactly what the cues sound like. */
+  const testSound = () => {
+    unlockVoice();
+    chime('ready');
+    speak('Sound check. Three, two, one.');
+  };
+
+  const chooseSignal = (next) => {
+    setSignal(next);
+    try {
+      localStorage.setItem(SIGNAL_KEY, next);
+    } catch {
+      /* private mode */
+    }
+    gestureRef.current?.close?.();
+    gestureRef.current = null;
+    setGestureStatus('off');
+    gateRef.current.reset();
+    handGateRef.current.reset();
+    setHoldProgress(0);
+    autoStartedRef.current = false;
+
+    speak(
+      next === 'auto'
+        ? 'Automatic start.'
+        : next === 'hand'
+          ? 'Raise a hand to start.'
+          : 'Thumbs up to start.',
+    );
+    setCue({ text: 'READY', detail: SIGNAL_DETAIL[next], tone: 'info' });
+
+    if (phase === 'live') {
+      if (next === 'auto') {
+        arm(false);
+      } else {
         arm(true);
-        ensureGestures();
       }
+      if (next === 'thumb') ensureGestures();
     }
   };
 
@@ -586,11 +720,11 @@ export default function TestRunner() {
     if (next) speak('Voice commands on. Say ready to start a trial.');
   };
 
-  // Load the hand model only when hands-free start is wanted.
+  // The separate hand model is only downloaded when thumbs-up is the chosen signal.
   useEffect(() => {
-    if (phase !== 'live' || !handsFree) return;
+    if (phase !== 'live' || signal !== 'thumb') return;
     ensureGestures();
-  }, [phase, handsFree, ensureGestures]);
+  }, [phase, signal, ensureGestures]);
 
   // Voice commands are opt-in: enabling them is what triggers the microphone
   // prompt, so nobody is asked for the microphone unasked.
@@ -606,20 +740,17 @@ export default function TestRunner() {
     }
 
     const commands = createVoiceCommands({
-      onState: (state) => setListenStatus(state === 'listening' ? 'listening' : state === 'blocked' ? 'blocked' : 'off'),
+      onState: (state) =>
+        setListenStatus(state === 'listening' ? 'listening' : state === 'blocked' ? 'blocked' : 'off'),
       onCommand: (id) => {
         if (recordingRef.current) return;
         if (id === 'start') {
-          if (readyRef.current) {
-            arm(false);
-            startTrialRef.current?.();
-          } else {
-            startTrialRef.current?.();
-          }
+          if (readyRef.current) arm(false);
+          startTrialRef.current?.();
         }
         if (id === 'repeat') {
           arm(true);
-          setCue({ text: 'READY', detail: 'Thumbs up or say ready', tone: 'info' });
+          setCue({ text: 'READY', detail: SIGNAL_DETAIL[signalRef.current], tone: 'info' });
         }
       },
     });
@@ -673,6 +804,21 @@ export default function TestRunner() {
   const lowFps = fps > 0 && fps < PARAMS.minFrameRate;
   const canStart = phase === 'live' && !recording && bodyCheck.ok && !progress?.complete;
 
+  const audioNote = !audio.supported
+    ? 'This browser cannot speak. Every cue is also written on screen.'
+    : audio.voiceCount === 0
+      ? 'No speech voices are installed, so you will only hear the beeps. The cues stay on screen.'
+      : audio.embedded
+        ? 'This is an embedded preview, and browsers often block audio inside one. Open the app in its own tab if you hear nothing.'
+        : null;
+
+  const signalNote =
+    signal === 'thumb' && gestureStatus === 'loading'
+      ? 'Loading the hand model…'
+      : signal === 'thumb' && gestureStatus === 'unavailable'
+        ? 'The hand model could not load — switch to automatic or raise a hand.'
+        : SIGNAL_STATUS[signal];
+
   return (
     <div className="stack">
       <div className="row between">
@@ -716,10 +862,7 @@ export default function TestRunner() {
         </div>
       )}
 
-      <div
-        className="camera-wrap"
-        style={camera?.aspect ? { aspectRatio: String(camera.aspect) } : undefined}
-      >
+      <div className="camera-wrap" style={camera?.aspect ? { aspectRatio: String(camera.aspect) } : undefined}>
         <video ref={videoRef} autoPlay playsInline muted className={isLanding ? 'front-view' : ''} />
         <LiveSkeletonCanvas points={points} videoRef={videoRef} highlightSide={side} />
 
@@ -735,9 +878,7 @@ export default function TestRunner() {
                 <span style={{ width: `${Math.round(holdProgress * 100)}%` }} />
               </div>
             )}
-            {ready && holdProgress > 0 && holdProgress < 1 && (
-              <div className="cue-detail">Keep holding…</div>
-            )}
+            {ready && holdProgress > 0 && holdProgress < 1 && <div className="cue-detail">Keep holding…</div>}
           </div>
         )}
 
@@ -818,32 +959,42 @@ export default function TestRunner() {
       )}
 
       {phase === 'live' && (
-        <div className="hands-free-bar">
-          <span className="muted small">Hands-free:</span>
-          <button type="button" className="chip" aria-pressed={handsFree} onClick={toggleHandsFree}>
-            ✋ gesture {handsFree ? 'on' : 'off'}
-          </button>
-          <button type="button" className="chip" aria-pressed={voiceOn} onClick={toggleVoice} disabled={!voiceSupported()}>
-            🔊 sound {voiceOn ? 'on' : 'off'}
-          </button>
-          {voiceCommandSupport.supported ? (
-            <button type="button" className="chip" aria-pressed={voiceCommandsOn} onClick={toggleVoiceCommands}>
-              🎙 voice {voiceCommandsOn ? (listenStatus === 'listening' ? 'listening' : 'on') : 'off'}
+        <div className="stack" style={{ gap: '0.5rem' }}>
+          <div className="hands-free-bar">
+            <span className="muted small">Start a trial by:</span>
+            <div className="pill-toggle">
+              {SIGNAL_MODES.map(([value, label]) => (
+                <button key={value} type="button" aria-pressed={signal === value} onClick={() => chooseSignal(value)}>
+                  {label}
+                </button>
+              ))}
+            </div>
+            <button
+              type="button"
+              className="chip"
+              aria-pressed={voiceOn}
+              onClick={toggleVoice}
+              disabled={!voiceSupported()}
+            >
+              🔊 sound {voiceOn ? 'on' : 'off'}
             </button>
-          ) : (
-            <span className="muted small">{voiceCommandSupport.message}</span>
-          )}
-          <span className="muted small">
-            {handsFree
-              ? gestureStatus === 'ready'
-                ? 'show a 👍 or open palm to start'
-                : gestureStatus === 'loading'
-                  ? 'loading the hand model…'
-                  : gestureStatus === 'unavailable'
-                    ? 'hand model unavailable — use the button or space bar'
-                    : ''
-              : 'use the button or the space bar to start'}
-          </span>
+            <button type="button" className="chip" onClick={testSound} disabled={!voiceOn}>
+              test sound
+            </button>
+            {voiceCommandSupport.supported ? (
+              <button type="button" className="chip" aria-pressed={voiceCommandsOn} onClick={toggleVoiceCommands}>
+                🎙 voice {voiceCommandsOn ? (listenStatus === 'listening' ? 'listening' : 'on') : 'off'}
+              </button>
+            ) : null}
+          </div>
+          <p className="muted small" style={{ margin: 0 }}>
+            {signalNote}
+          </p>
+          {audioNote ? (
+            <p className="muted small hud-warn" style={{ margin: 0 }}>
+              {audioNote}
+            </p>
+          ) : null}
         </div>
       )}
 
@@ -927,8 +1078,4 @@ export default function TestRunner() {
       <Disclaimer />
     </div>
   );
-}
-
-function attemptedPracticeLine(progress) {
-  return Boolean(progress && progress.practice === false);
 }
