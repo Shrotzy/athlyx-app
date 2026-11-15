@@ -94,7 +94,15 @@ export function compactLandmarks(landmarks, { maxFrames = 360 } = {}) {
   for (let index = 0; index < frames.length; index += step) {
     kept.push(roundFrame(frames[index]));
   }
-  return { points: LANDMARK_POINTS, fps: Math.round(landmarks.fps || 30), frames: kept };
+  const aspect = Number(landmarks.aspect);
+  return {
+    points: LANDMARK_POINTS,
+    fps: Math.round(landmarks.fps || 30),
+    // Stored so the replay canvas keeps the original frame proportions instead
+    // of stretching a portrait phone recording into a landscape box.
+    ...(Number.isFinite(aspect) && aspect > 0 ? { aspect: Math.round(aspect * 1000) / 1000 } : {}),
+    frames: kept,
+  };
 }
 
 export function decodeLandmarks(stored) {

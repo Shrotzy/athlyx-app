@@ -1,6 +1,18 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+import { createRequire } from 'node:module';
 import { fileURLToPath, URL } from 'node:url';
+
+// The MediaPipe WASM runtime must match the installed package version exactly,
+// otherwise its CDN path 404s and the pose model never initialises. Read the
+// real version at build time instead of hard-coding it.
+const require = createRequire(import.meta.url);
+let mediapipeVersion = '';
+try {
+  mediapipeVersion = require('@mediapipe/tasks-vision/package.json').version;
+} catch {
+  mediapipeVersion = '';
+}
 
 const API_PORT = process.env.API_PORT || 3001;
 
@@ -17,6 +29,9 @@ export default defineConfig({
     alias: {
       '@shared': fileURLToPath(new URL('./shared', import.meta.url)),
     },
+  },
+  define: {
+    __MEDIAPIPE_VERSION__: JSON.stringify(mediapipeVersion),
   },
   server: {
     host: '0.0.0.0',

@@ -19,7 +19,7 @@ This repository is the working foundation for the project described in [docs/SPE
 | Accounts, session tokens, athlete–therapist invite links, revocation | Implemented |
 | Assignments and check-in schedules | Implemented |
 | Check-in submission, server-side scoring, history and progress series | Implemented |
-| Live pose tracking, phase detection, trial capture in the browser | Implemented as a prototype (see [Limitations](#limitations)) |
+| Live pose tracking, phase detection, trial capture in the browser | Implemented; pose pipeline and trial loop verified in a real browser (see [Limitations](#limitations)) |
 | Therapist review: scores, marker breakdown, trial notes, decision, skeleton replay | Implemented |
 | Exercise library, custom exercises, plans, completion tracking | Implemented (library is demo content) |
 | Optional plain-language explanations via Gemini | Implemented, off unless a key is set |
@@ -59,6 +59,23 @@ The seed is idempotent: it deletes and recreates the two demo accounts (and ever
 | `npm start` | Serve API **and** the built client from one process (`dist/` must exist) |
 
 Camera access requires a secure context: `localhost` works, and a deployed instance must be served over **HTTPS**.
+
+### If the camera does not start
+
+The runner checks the browser first and prints the actual reason rather than failing silently:
+
+| What you see | What to do |
+| --- | --- |
+| "Camera access needs HTTPS" | The page is on `http://`. Use `localhost` or an https:// address |
+| "permission was denied or blocked" | Allow the camera for the site in the browser's site settings, then reload |
+| "viewing the app inside an embedded preview, which often blocks the camera" | Open the app in its own tab or on your phone; iframes need `allow="camera"` |
+| "No camera was found" | No device is attached or enabled |
+| "already in use by another app or tab" | Close the other camera app (Zoom, Teams, another tab) |
+| Trial voids with `low-frame-rate` | The device is under 24 fps. Use the **faster model** link next to the preflight readout, close other tabs, or improve the lighting |
+
+The preflight line under the video shows resolution, reported frame rate, whether the pose is found, and which body parts are missing from frame. A trial cannot be started until the shoulders, hips, knees, ankles and feet are all visible, because a trial without feet cannot be measured.
+
+The MediaPipe WASM runtime is pinned to the installed `@mediapipe/tasks-vision` version at build time — a stale pin makes its CDN path 404 and the model never loads. Override the assets with `VITE_POSE_WASM_URL` / `VITE_POSE_MODEL_URL` if you vendor them locally.
 
 ---
 
@@ -153,8 +170,10 @@ Bearer token in `Authorization: Bearer <token>`. All routes are under `/api`.
 
 ## Limitations
 
+- **The camera path is software-verified, not clinically validated.** The pose model initialises and returns 33 landmarks, and a full trial runs end to end (take-off, landing, hold, distance, knee flexion) — checked in a real Chromium browser using a synthetic video source, because this development machine has no camera. A physical webcam, phone capture, lighting, and real athlete movement are still unverified, and the UI has not been walked through by hand.
 - **Measurement calibration is a prototype.** Hop distance in centimetres uses the athlete's height (leg length ≈ 0.53 × height) and the standing hip-to-ankle length in pixels as a ruler. The LSI only uses a ratio between legs on the same fixed camera, so a fixed scale error cancels — but the centimetre values have not been validated against a tape measure yet. That validation (and repeated-test reliability) is required before clinical use.
 - **2D pose only.** Frontal-plane valgus and lateral trunk lean are approximations from a single front view, and side-view knee flexion is an image-plane angle. No 3D reconstruction, no force plates.
+- **Frame rate is the limiting factor.** The full pose model is the accurate default; on a device that cannot hold ~24 fps the preflight offers a faster model. Below 24 fps trials are voided rather than scored, which is correct but frustrating — hops are fast, so 60 fps capture is strongly preferred.
 - **Phase detection is heuristic.** Landing-not-held and tracking-lost are detected in the browser; other-foot-touchdown and pausing-between-hops are best-effort and are there for the therapist to verify in the replay. Low frame rate (< 24 fps) voids the trial; 24–30 fps is recorded with a warning. Hops are fast, so 60 fps is strongly preferred.
 - **The exercise library is demo content**, labelled as such, and must be replaced or verified against a clinic protocol before use. Exercises are always chosen by the therapist.
 - **Not implemented yet:** PDF/CSV export, automated check-in reminders, multi-camera or 3D capture, native mobile apps, and any return-to-sport recommendation (which is deliberately out of scope).

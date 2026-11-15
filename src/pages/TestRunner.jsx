@@ -1,18 +1,23 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
 
 import { Disclaimer, ErrorBanner, SafetyNotice } from '../components/common.jsx';
 import { LiveSkeletonCanvas } from '../components/SkeletonCanvas.jsx';
 import { appendTrial, loadDraft, markPracticeDone, progressFor, saveDraft } from '../lib/draft.js';
 import { useAuth } from '../lib/auth.jsx';
-import {
-  HopTrialDetector,
-  LandingTrialDetector,
-  hopDistanceCm,
-  medianOf,
-} from '../lib/measure.js';
+import { HopTrialDetector, LandingTrialDetector, hopDistanceCm, medianOf } from '../lib/measure.js';
 import { compactLandmarks, encodeFrame } from '@shared/landmarks.js';
-import { createFpsMeter, createPoseLandmarker, namedPoints, startCamera, stopCamera } from '../lib/pose.js';
+import {
+  bodyInFrame,
+  cameraInfo,
+  cameraSupport,
+  createFpsMeter,
+  createPoseLandmarker,
+  describeCameraError,
+  namedPoints,
+  startCamera,
+  stopCamera,
+} from '../lib/pose.js';
 import { LEGS, PARAMS, SIDES, TESTS, TEST_META } from '@shared/constants.js';
 import { isValidTrial } from '@shared/validation.js';
 
@@ -32,7 +37,6 @@ export default function TestRunner() {
   const { test, leg } = useParams();
   const meta = TEST_META[test];
   const { user } = useAuth();
-  const navigate = useNavigate();
 
   const videoRef = useRef(null);
   const landmarkerRef = useRef(null);
@@ -43,38 +47,51 @@ export default function TestRunner() {
   const fpsMeterRef = useRef(createFpsMeter());
   const recordingRef = useRef(false);
   const lastVideoTimeRef = useRef(-1);
-  const pointsRef = useRef(null);
   const trialStartedAtRef = useRef(0);
   const lastOverlayRef = useRef(0);
+  const startingRef = useRef(false);
+  // The detection loop runs outside React, so it must call the *latest*
+  // finalize function rather than the one captured when the loop started.
+  const finalizeRef = useRef(null);
 
   const [draft, setDraft] = useState(() => loadDraft());
-  const [phase, setPhase] = useState('intro'); // intro | starting | live | error | finished
+  const [phase, setPhase] = useState('intro'); // intro | starting | live | error
   const [error, setError] = useState(null);
   const [hint, setHint] = useState('Stand still with your whole body in frame.');
   const [fps, setFps] = useState(0);
-  const [tracking, setTracking] = useState(true);
+  const [tracking, setTracking] = useState(false);
   const [points, setPoints] = useState(null);
   const [recording, setRecording] = useState(false);
-  const [captured, setCaptured] = useState(null); // most recent trial result
-  const [busy, setBusy] = useState(false);
+  const [captured, setCaptured] = useState(null);
+  const [camera, setCamera] = useState(null);
+  const [model, setModel] = useState('full');
+  const [switching, setSwitching] = useState(false);
 
   const side = useMemo(() => sideForLeg(leg, user?.operatedLeg), [leg, user?.operatedLeg]);
   const progress = draft ? progressFor(draft, test, leg) : null;
   const isLanding = test === TESTS.SINGLE_LEG_LANDING;
+  const bodyCheck = useMemo(() => bodyInFrame(points), [points]);
+  const canStart = phase === 'live' && !recording && bodyCheck.ok && !progress?.complete;
 
   const stopEverything = useCallback(() => {
     cancelAnimationFrame(rafRef.current);
+    recordingRef.current = false;
     stopCamera(streamRef.current);
     streamRef.current = null;
     landmarkerRef.current?.close?.();
     landmarkerRef.current = null;
+    setRecording(false);
+    setTracking(false);
+    setPoints(null);
+    setFps(0);
+    setCamera(null);
   }, []);
 
   useEffect(() => () => stopEverything(), [stopEverything]);
 
-  const ensureLandmarker = async () => {
+  const ensureLandmarker = async (which = model) => {
     if (!landmarkerRef.current) {
-      landmarkerRef.current = await createPoseLandmarker();
+      landmarkerRef.current = await createPoseLandmarker({ model: which });
     }
     return landmarkerRef.current;
   };
@@ -91,6 +108,9 @@ export default function TestRunner() {
       // trial and warn, which is what the requirements ask for.
       if (fpsNow > 0 && fpsNow < 24) voidReasons.push('low-frame-rate');
 
+      const video = videoRef.current;
+      const aspect = video?.videoWidth && video?.videoHeight ? video.videoWidth / video.videoHeight : null;
+
       let metrics = {};
       if (isLanding) {
         metrics = {
@@ -102,7 +122,7 @@ export default function TestRunner() {
         const distance = hopDistanceCm({
           takeoffX: rawResult.takeoffX,
           landingX: rawResult.landingX,
-          aspect: videoRef.current ? videoRef.current.videoWidth / videoRef.current.videoHeight : NaN,
+          aspect,
           standingDy: rawResult.standingHipAnkleDy,
           heightCm: user?.heightCm || 170,
         });
@@ -122,7 +142,7 @@ export default function TestRunner() {
         valid: voidReasons.length === 0,
         voidReasons: [...new Set(voidReasons)],
         metrics,
-        landmarks: compactLandmarks({ frames, fps: fpsNow || 30 }),
+        landmarks: compactLandmarks({ frames, fps: fpsNow || 30, aspect }),
         durationMs: Math.round(performance.now() - startedAt),
       };
 
@@ -137,19 +157,25 @@ export default function TestRunner() {
     [isLanding, leg, progress?.attempts, progress?.practice, test, user?.heightCm],
   );
 
+  // Keep the ref pointing at the newest closure without restarting the loop.
+  useEffect(() => {
+    finalizeRef.current = finalizeTrial;
+  }, [finalizeTrial]);
+
   const startTrial = () => {
+    if (!canStart) return;
     trialStartedAtRef.current = performance.now();
-    const detector = isLanding
+    detectorRef.current = isLanding
       ? new LandingTrialDetector({ side, fps: TARGET_FPS })
       : new HopTrialDetector({
           side,
           hops: test === TESTS.CROSSOVER_HOP ? PARAMS.crossoverHops : 1,
           fps: TARGET_FPS,
         });
-    detectorRef.current = detector;
     framesRef.current = [];
     recordingRef.current = true;
     lastVideoTimeRef.current = -1;
+    fpsMeterRef.current.reset();
     setCaptured(null);
     setRecording(true);
     setHint(
@@ -161,19 +187,19 @@ export default function TestRunner() {
     );
   };
 
+  /** Detection loop. Runs once per camera session; never restarted per trial. */
   const loop = useCallback(() => {
-    const video = videoRef.current;
-    const landmarker = landmarkerRef.current;
-    if (!video || !landmarker) return;
-
     const tick = () => {
-      if (!videoRef.current || !landmarkerRef.current) return;
+      const video = videoRef.current;
+      const landmarker = landmarkerRef.current;
+      if (!video || !landmarker) return;
+
       const now = performance.now();
       if (video.readyState >= 2 && video.currentTime !== lastVideoTimeRef.current) {
         lastVideoTimeRef.current = video.currentTime;
-        const result = landmarkerRef.current.detectForVideo(video, now);
+        const result = landmarker.detectForVideo(video, now);
         const named = namedPoints(result?.landmarks?.[0]);
-        pointsRef.current = named;
+
         // React state drives the overlay; throttle it so drawing does not eat
         // the frame budget of the tracker.
         if (now - lastOverlayRef.current > 80) {
@@ -192,33 +218,83 @@ export default function TestRunner() {
           const update = detectorRef.current.push(named, now);
           if (update.hint) setHint(update.hint);
           if (update.done) {
-            finalizeTrial(update.result, framesRef.current, trialStartedAtRef.current);
+            finalizeRef.current?.(update.result, framesRef.current, trialStartedAtRef.current);
           }
         }
       }
+
       rafRef.current = requestAnimationFrame(tick);
     };
 
     rafRef.current = requestAnimationFrame(tick);
-  }, [finalizeTrial]);
+  }, []);
 
   const startSession = async () => {
+    if (startingRef.current) return;
+    const support = cameraSupport();
+    if (!support.ok) {
+      setPhase('error');
+      setError(support.message);
+      return;
+    }
+
+    startingRef.current = true;
     setPhase('starting');
     setError(null);
+    setPoints(null);
+    setTracking(false);
+
     try {
       await ensureLandmarker();
       const stream = await startCamera(videoRef.current, { frameRate: TARGET_FPS });
       streamRef.current = stream;
+      setCamera(cameraInfo(stream, videoRef.current));
       setPhase('live');
       loop();
     } catch (problem) {
+      console.error('[camera] start failed:', problem);
       setPhase('error');
-      setError(
-        problem?.name === 'NotAllowedError'
-          ? 'Camera permission was denied. Allow camera access in your browser, then try again.'
-          : problem?.message || 'The camera or pose model could not start.',
-      );
+      setError(describeCameraError(problem));
+      stopEverything();
+    } finally {
+      startingRef.current = false;
     }
+  };
+
+  const retry = () => {
+    stopEverything();
+    startSession();
+  };
+
+  /**
+   * Swap the pose model without touching the camera. The kilometre-scale cause
+   * of "the camera is useless" on a weak device is frame rate, and the lite
+   * model is several times faster than the full one.
+   */
+  const switchModel = async (next) => {
+    if (recording || switching || next === model) return;
+    setSwitching(true);
+    setError(null);
+    try {
+      cancelAnimationFrame(rafRef.current);
+      landmarkerRef.current?.close?.();
+      landmarkerRef.current = null;
+      const landmarker = await createPoseLandmarker({ model: next });
+      landmarkerRef.current = landmarker;
+      setModel(next);
+      fpsMeterRef.current.reset();
+      loop();
+    } catch (problem) {
+      setError(describeCameraError(problem));
+    } finally {
+      setSwitching(false);
+    }
+  };
+
+  const stopAndReset = () => {
+    stopEverything();
+    setPhase('intro');
+    setError(null);
   };
 
   if (!meta || ![TESTS.SINGLE_HOP, TESTS.CROSSOVER_HOP, TESTS.SINGLE_LEG_LANDING].includes(test)) {
@@ -245,6 +321,7 @@ export default function TestRunner() {
     (trial) => trial.test === test && trial.leg === leg && isValidTrial(trial),
   );
   const lastDistances = validTrials.map((trial) => trial.metrics?.hopDistanceCm);
+  const lowFps = fps > 0 && fps < PARAMS.minFrameRate;
 
   return (
     <div className="stack">
@@ -270,35 +347,35 @@ export default function TestRunner() {
           Trial <strong className="hud-value">{progress?.attempts || 0}</strong> of max {PARAMS.maxAttempts} ·{' '}
           <strong className="hud-value">{progress?.validCount || 0}</strong> valid ({PARAMS.minValidTrials} needed)
         </span>
-        <span className={fps > 0 && fps < PARAMS.minFrameRate ? 'hud-warn' : ''}>
-          {fps ? `${Math.round(fps)} fps` : 'fps —'}
-          {fps > 0 && fps < PARAMS.minFrameRate ? ' · too low for reliable landing detection' : ''}
+        <span className={lowFps ? 'hud-warn' : ''}>
+          {fps ? `${fps} fps` : 'fps —'}
+          {lowFps ? ' · too low for reliable landing detection' : ''}
         </span>
-        <span className={tracking ? '' : 'hud-warn'}>{tracking ? 'tracking' : 'no pose detected'}</span>
+        <span className={bodyCheck.ok ? '' : 'hud-warn'}>
+          {bodyCheck.ok
+            ? 'full body in frame'
+            : points
+              ? `not in frame: ${bodyCheck.missing.join(', ')}`
+              : 'waiting for pose'}
+        </span>
       </div>
 
-      {progress?.practice === false && (
+      {progress?.practice === false && !recording && (
         <div className="notice">
           This first attempt is a practice trial. It is not scored, so you can get a feel for the movement.
         </div>
       )}
 
-      <div className="camera-wrap">
-        <video ref={videoRef} playsInline muted className={isLanding ? 'front-view' : ''} />
+      <div
+        className="camera-wrap"
+        style={camera?.aspect ? { aspectRatio: String(camera.aspect) } : undefined}
+      >
+        <video ref={videoRef} autoPlay playsInline muted className={isLanding ? 'front-view' : ''} />
         <LiveSkeletonCanvas points={points} videoRef={videoRef} highlightSide={side} />
         {recording && <div className="hold-prompt">{hint}</div>}
+
         {phase === 'intro' && (
-          <div
-            style={{
-              position: 'absolute',
-              inset: 0,
-              display: 'grid',
-              placeItems: 'center',
-              background: 'rgba(3,7,15,0.92)',
-              padding: '1.25rem',
-              textAlign: 'center',
-            }}
-          >
+          <div className="camera-overlay">
             <div className="stack" style={{ maxWidth: 460 }}>
               <h3 style={{ margin: 0 }}>Camera placement</h3>
               <p className="muted small" style={{ margin: 0 }}>
@@ -312,13 +389,75 @@ export default function TestRunner() {
             </div>
           </div>
         )}
+
+        {phase === 'starting' && (
+          <div className="camera-overlay">
+            <div className="stack" style={{ maxWidth: 420 }}>
+              <h3 style={{ margin: 0 }}>Starting the camera…</h3>
+              <p className="muted small" style={{ margin: 0 }}>
+                Allow camera access if your browser asks. The first load also downloads the pose model.
+              </p>
+            </div>
+          </div>
+        )}
+
+        {phase === 'error' && (
+          <div className="camera-overlay">
+            <div className="stack" style={{ maxWidth: 480 }}>
+              <h3 style={{ margin: 0 }}>The camera did not start</h3>
+              <p className="small" style={{ margin: 0 }}>
+                {error}
+              </p>
+              <div className="row" style={{ justifyContent: 'center' }}>
+                <button className="button" type="button" onClick={retry}>
+                  Try again
+                </button>
+                <Link className="button ghost" to="/athlete/check-in">
+                  Back to check-in
+                </Link>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
+
+      {phase === 'live' && (
+        <p className="preflight">
+          <span className="ok">camera live</span>
+          {camera ? (
+            <span>
+              {camera.width}×{camera.height}
+              {camera.frameRate ? ` · ${camera.frameRate} fps reported` : ''} · {camera.label}
+            </span>
+          ) : null}
+          <span className={bodyCheck.ok ? 'ok' : 'bad'}>
+            {bodyCheck.ok ? 'full body in frame' : `step back — missing ${bodyCheck.missing.join(', ')}`}
+          </span>
+          <button
+            type="button"
+            className="link-button small"
+            onClick={() => switchModel(model === 'full' ? 'lite' : 'full')}
+            disabled={recording || switching}
+          >
+            {switching
+              ? 'switching…'
+              : model === 'full'
+                ? 'slow device? use the faster model'
+                : 'using fast model — switch back to accurate'}
+          </button>
+        </p>
+      )}
 
       <div className="row between">
         <div className="row">
-          <button className="button" type="button" onClick={startTrial} disabled={phase !== 'live' || recording || progress?.complete}>
+          <button className="button" type="button" onClick={startTrial} disabled={!canStart}>
             {progress?.practice === false ? 'Start practice trial' : 'Start trial'}
           </button>
+          {phase === 'live' && (
+            <button className="button ghost small" type="button" onClick={stopAndReset}>
+              Stop camera
+            </button>
+          )}
           {progress?.complete && (
             <Link className="button secondary" to="/athlete/check-in">
               This leg is complete
@@ -332,6 +471,14 @@ export default function TestRunner() {
           </span>
         )}
       </div>
+
+      {phase === 'live' && !bodyCheck.ok && !progress?.complete && (
+        <p className="muted small" style={{ margin: 0 }}>
+          {points
+            ? 'A trial cannot start until the shoulders, hips, knees, ankles and feet are all visible. Step back until the far foot is in frame.'
+            : 'Waiting for the pose model to find you. Stand fully in frame, in good light, facing the camera or side-on as instructed.'}
+        </p>
+      )}
 
       {captured && (
         <section className="card stack">
@@ -360,12 +507,7 @@ export default function TestRunner() {
             </p>
           )}
           <div className="row">
-            <button
-              className="button"
-              type="button"
-              onClick={startTrial}
-              disabled={progress?.complete}
-            >
+            <button className="button" type="button" onClick={startTrial} disabled={!canStart}>
               {progress?.complete ? 'Leg complete' : 'Next trial'}
             </button>
             {progress?.complete && (

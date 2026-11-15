@@ -13,6 +13,10 @@ import { PARAMS } from '@shared/constants.js';
 
 export const rad2deg = (radians) => (radians * 180) / Math.PI;
 
+// Baseline calibration window: whichever limit is reached first.
+const CALIBRATION_FRAMES = 8;
+const CALIBRATION_MS = 700;
+
 export function midpoint(a, b) {
   if (!a || !b) return null;
   return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
@@ -154,6 +158,7 @@ export class HopTrialDetector {
 
     this.state = 'calibrating';
     this.baselineSamples = [];
+    this.calibrationStartedAt = null;
     this.baselineY = null;
     this.standingDy = null;
     this.startedAt = null;
@@ -188,8 +193,12 @@ export class HopTrialDetector {
     }
 
     if (this.state === 'calibrating') {
+      if (this.calibrationStartedAt == null) this.calibrationStartedAt = timeMs;
       this.baselineSamples.push(leg.ankle.y);
-      if (this.baselineSamples.length >= 20) {
+      // Calibrate on a short window rather than a fixed frame count, so a slow
+      // device is not still "calibrating" when the trial window ends.
+      const elapsed = timeMs - this.calibrationStartedAt;
+      if (this.baselineSamples.length >= CALIBRATION_FRAMES || elapsed >= CALIBRATION_MS) {
         this.baselineY = medianOf(this.baselineSamples);
         if (leg.hip) this.standingDy = Math.abs(leg.ankle.y - leg.hip.y);
         this.state = 'grounded';
@@ -325,6 +334,7 @@ export class LandingTrialDetector {
     this.result = null;
     this.landingDetected = false;
     this.recentHipY = [];
+    this.calibrationStartedAt = null;
   }
 
   push(points, timeMs) {
@@ -340,8 +350,10 @@ export class LandingTrialDetector {
     }
 
     if (this.state === 'calibrating') {
+      if (this.calibrationStartedAt == null) this.calibrationStartedAt = timeMs;
       this.baseline.push(hipMid.y);
-      if (this.baseline.length >= 20) {
+      const elapsed = timeMs - this.calibrationStartedAt;
+      if (this.baseline.length >= CALIBRATION_FRAMES || elapsed >= CALIBRATION_MS) {
         this.baselineY = medianOf(this.baseline);
         this.state = 'ready';
         this.startedAt = timeMs;

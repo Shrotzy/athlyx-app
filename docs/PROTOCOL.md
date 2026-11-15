@@ -24,6 +24,12 @@ Rules that apply to every test:
 
 The app asks for the operated leg once, in the athlete's account, and maps every measurement onto `operated` and `healthy` from there.
 
+### Before a trial can start
+
+The runner gates on a preflight check: the camera must be live, and the shoulders, hips, knees, ankles and toes must all be visible. It also displays the resolution, the frame rate the track reports, and the measured processing rate, because a trial without visible feet cannot be measured and a low frame rate voids trials after the fact.
+
+Two pose models are available. The full model is the accurate default; the lite model is several times faster and is the practical choice on a phone or a browser without GPU acceleration. Switching mid-session keeps the same camera and camera position, so the leg-to-leg ratio is unaffected.
+
 ---
 
 ## Trials
@@ -93,6 +99,7 @@ Consequences worth stating plainly to a clinician:
 
 ## Validation still required (before any clinical use)
 
+0. **Hardware capture**: the software path (model init, 33 landmarks, phase detection, trial submission) has been run in a real browser against a synthetic video source. A physical webcam, a phone camera, real lighting and real athlete movement have not been tested.
 1. **Tape-measure agreement**: hop distances from the app vs a tape measure, across repeat trials on the same person.
 2. **Repeated-test reliability**: within-session and between-session variability, to calibrate the borderline band against real measurement noise.
 3. **Valgus/trunk-lean agreement**: compared with a clinician's visual rating or a 3D system, at least on a small volunteer sample.
