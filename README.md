@@ -197,6 +197,8 @@ Privacy: the microphone is only open while the runner page is live and voice com
 
 Accuracy is unchanged: the trial still has to be detected by the same rules, the same validity checks apply, and the score still comes from `shared/scoring.js`. Hands-free only changes how a trial is started.
 
+**When tracking drops, nothing is lost.** A trial that loses the pose is voided, not scored, and the reason is said out loud ("that one did not count — tracking lost"). A voided trial never restarts itself, even in automatic mode: you get the rest, then the runner waits for you to choose, so a bad run cannot eat the attempt budget. A voided attempt can also be discarded with one button. If a leg does use all six attempts without three valid trials, its page says so and offers **Start this leg again**, which clears only that test on that leg — the other leg and the other tests are untouched.
+
 ## Limitations
 
 - **The camera path is software-verified, not clinically validated.** The pose model initialises and returns 33 landmarks, and a full trial runs end to end (take-off, landing, hold, distance, knee flexion) — checked in a real Chromium browser using a synthetic video source, because this development machine has no camera. A physical webcam, phone capture, lighting, and real athlete movement are still unverified, and the UI has not been walked through by hand.

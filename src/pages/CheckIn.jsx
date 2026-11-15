@@ -123,7 +123,7 @@ export default function CheckIn() {
                             </span>
                           ) : (
                             <Link className="small" to={`/athlete/check-in/${test}/${leg}`}>
-                              {row?.attempts ? 'Continue' : 'Start'}
+                              {row?.exhausted ? 'Attempts used — start again' : row?.attempts ? 'Continue' : 'Start'}
                             </Link>
                           )}
                         </div>
@@ -165,7 +165,8 @@ export default function CheckIn() {
         </div>
         {!overview.complete && (
           <p className="muted small" style={{ margin: 0 }}>
-            Every test and leg needs at least {PARAMS.minValidTrials} valid trials before you can submit.
+            Every test and leg needs at least {PARAMS.minValidTrials} valid trials before you can submit. A leg that
+            used up its {PARAMS.maxAttempts} attempts is reset from its own page, without affecting the other leg.
           </p>
         )}
       </section>

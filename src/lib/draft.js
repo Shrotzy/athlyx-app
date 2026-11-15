@@ -69,13 +69,51 @@ export function trialsFor(draft, test, leg) {
 export function progressFor(draft, test, leg) {
   const trials = trialsFor(draft, test, leg);
   const validCount = trials.filter(isValidTrial).length;
+  const attempts = trials.length;
+  // Completion is about *valid* trials only. Counting attempts as completion
+  // used to lock a leg the moment six voided attempts were made: the start
+  // button went dead and the athlete could never recover.
+  const complete = validCount >= PARAMS.minValidTrials;
   return {
-    attempts: trials.length,
+    attempts,
     validCount,
     practice: Boolean(draft?.practice?.[draftKey(test, leg)]),
-    complete: validCount >= PARAMS.minValidTrials || trials.length >= PARAMS.maxAttempts,
-    canRetry: trials.length < PARAMS.maxAttempts,
+    complete,
+    exhausted: !complete && attempts >= PARAMS.maxAttempts,
+    attemptsLeft: Math.max(0, PARAMS.maxAttempts - attempts),
+    canRetry: !complete && attempts < PARAMS.maxAttempts,
   };
+}
+
+/** Start one test on one leg again: clears only that leg's trials. */
+export function resetLeg(draft, test, leg) {
+  const next = {
+    ...draft,
+    trials: (draft.trials || []).filter((trial) => !(trial.test === test && trial.leg === leg)),
+    practice: { ...draft.practice, [draftKey(test, leg)]: false },
+  };
+  saveDraft(next);
+  return next;
+}
+
+/** Remove the most recent attempt for one leg, so a mis-start need not use the budget. */
+export function dropLastTrial(draft, test, leg) {
+  const trials = [...(draft.trials || [])];
+  for (let index = trials.length - 1; index >= 0; index -= 1) {
+    if (trials[index].test === test && trials[index].leg === leg) {
+      trials.splice(index, 1);
+      break;
+    }
+  }
+  const remaining = trials.filter((trial) => trial.test === test && trial.leg === leg).length;
+  const next = {
+    ...draft,
+    trials,
+    // If that was the only attempt, the practice trial has to be redone too.
+    practice: remaining === 0 ? { ...draft.practice, [draftKey(test, leg)]: false } : draft.practice,
+  };
+  saveDraft(next);
+  return next;
 }
 
 /** Completion for every test/leg in the draft, used by the check-in overview. */

@@ -216,4 +216,6 @@ export const CUES = {
   rest: (seconds) => `Rest for ${seconds} seconds.`,
   legComplete: 'That is this leg done. Good work. Head back to the check-in for the next test.',
   stepBack: 'Step back so your feet are in frame.',
+  tryAgainWhenReady: 'Take your time. When you are ready, put both hands on top of your head.',
+  attemptsUsed: `That is all the attempts for this leg, and it still needs three valid trials. Start this leg again when you are ready.`,
 };

@@ -3,7 +3,15 @@ import { Link, useParams } from 'react-router-dom';
 
 import { Disclaimer, ErrorBanner, SafetyNotice } from '../components/common.jsx';
 import { LiveSkeletonCanvas } from '../components/SkeletonCanvas.jsx';
-import { appendTrial, loadDraft, markPracticeDone, progressFor, saveDraft } from '../lib/draft.js';
+import {
+  appendTrial,
+  dropLastTrial,
+  loadDraft,
+  markPracticeDone,
+  progressFor,
+  resetLeg,
+  saveDraft,
+} from '../lib/draft.js';
 import { useAuth } from '../lib/auth.jsx';
 import { HopTrialDetector, LandingTrialDetector, hopDistanceCm, medianOf } from '../lib/measure.js';
 import { compactLandmarks, encodeFrame } from '@shared/landmarks.js';
@@ -34,7 +42,7 @@ import {
 } from '../lib/voice.js';
 import { commandSupport, createVoiceCommands } from '../lib/voice-commands.js';
 import { LEGS, PARAMS, SIDES, TESTS, TEST_META } from '@shared/constants.js';
-import { isValidTrial } from '@shared/validation.js';
+import { describeVoidReasons, isValidTrial } from '@shared/validation.js';
 
 const TARGET_FPS = PARAMS.preferredFrameRate;
 const SCORED_TRIALS = PARAMS.scoredTrials ?? PARAMS.minValidTrials;
@@ -254,9 +262,19 @@ export default function TestRunner() {
    * its own or wait for the raised hand. Nothing is clicked either way.
    */
   const scheduleNext = useCallback(
-    ({ complete, spoken, detail }) => {
+    ({ complete, exhausted, spoken, detail, voided }) => {
       arm(false);
       clearRest();
+
+      if (exhausted) {
+        setCue({
+          text: 'ATTEMPTS USED',
+          detail: 'Start this leg again to keep going',
+          tone: 'warn',
+        });
+        speak(`${spoken || ''} ${CUES.attemptsUsed}`.trim());
+        return;
+      }
 
       if (complete) {
         setCue({ text: 'LEG COMPLETE', detail: 'Stop the camera or move on to the next test', tone: 'good' });
@@ -293,7 +311,10 @@ export default function TestRunner() {
         setRestDetail('');
         triggerGateRef.current.reset();
 
-        if (signalRef.current === 'auto') {
+        // A voided trial never restarts itself: it usually means the athlete was
+        // not ready, and repeating it on a countdown would burn the attempt
+        // budget without them ever choosing to try again.
+        if (signalRef.current === 'auto' && !voided) {
           setCue({ text: 'GO', detail: 'Trial started', tone: 'good' });
           chime('go');
           speak('Go.');
@@ -304,7 +325,7 @@ export default function TestRunner() {
         arm(true);
         setCue({ text: 'READY', detail: SIGNAL_DETAIL.pose, tone: 'info' });
         chime('ready');
-        speak(CUES.readyToGo);
+        speak(voided ? CUES.tryAgainWhenReady : CUES.readyToGo);
       }, 1000);
     },
     [arm, clearRest],
@@ -375,14 +396,21 @@ export default function TestRunner() {
       if (attemptedPractice) {
         spoken = CUES.practiceDone;
       } else if (!trial.valid) {
-        spoken = CUES.trialVoided;
+        const why = describeVoidReasons(trial.voidReasons);
+        spoken = why ? `${CUES.trialVoided} ${why}.` : CUES.trialVoided;
       } else if (isLanding) {
         spoken = `${affirmationFor(trial.trialNo)} ${CUES.landingSaved}`;
       } else {
         spoken = `${affirmationFor(trial.trialNo)} ${CUES.trialSaved(metrics.hopDistanceCm)}`;
       }
 
-      scheduleNext({ complete: Boolean(nextProgress?.complete), spoken, detail: remainingText(nextProgress) });
+      scheduleNext({
+        complete: Boolean(nextProgress?.complete),
+        exhausted: Boolean(nextProgress?.exhausted),
+        spoken,
+        detail: remainingText(nextProgress),
+        voided: !trial.valid,
+      });
     },
     [isLanding, leg, progress?.attempts, progress?.practice, scheduleNext, test, user?.heightCm],
   );
@@ -726,6 +754,27 @@ export default function TestRunner() {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [phase]);
 
+  /** Recovery paths: a leg that used its attempts, and a mis-started attempt. */
+  const startLegOver = () => {
+    const current = loadDraft();
+    if (!current) return;
+    setDraft(resetLeg(current, test, leg));
+    setCaptured(null);
+    arm(true);
+    setCue({ text: 'READY', detail: SIGNAL_DETAIL.pose, tone: 'info' });
+    speak('Starting this leg again. Put both hands on top of your head when you are ready.');
+  };
+
+  const discardAttempt = () => {
+    const current = loadDraft();
+    if (!current) return;
+    setDraft(dropLastTrial(current, test, leg));
+    setCaptured(null);
+    arm(true);
+    setCue({ text: 'READY', detail: SIGNAL_DETAIL.pose, tone: 'info' });
+    speak('Attempt discarded. Put both hands on top of your head when you are ready.');
+  };
+
   if (!meta || ![TESTS.SINGLE_HOP, TESTS.CROSSOVER_HOP, TESTS.SINGLE_LEG_LANDING].includes(test)) {
     return (
       <div className="card">
@@ -751,7 +800,8 @@ export default function TestRunner() {
   );
   const lastDistances = validTrials.map((trial) => trial.metrics?.hopDistanceCm);
   const lowFps = fps > 0 && fps < PARAMS.minFrameRate;
-  const canStart = phase === 'live' && !recording && bodyCheck.ok && !progress?.complete;
+  const canStart =
+    phase === 'live' && !recording && bodyCheck.ok && !progress?.complete && !progress?.exhausted;
 
   const audioNote = !audio.supported
     ? 'This browser cannot speak. Every cue is also written on screen.'
@@ -819,6 +869,31 @@ export default function TestRunner() {
           <span>Back to the check-in</span>
         </li>
       </ol>
+
+      {progress?.exhausted && (
+        <div className="card stack">
+          <div className="row between">
+            <h3 style={{ margin: 0 }}>
+              This leg still needs {PARAMS.minValidTrials} valid trials
+            </h3>
+            <span className="badge status-below">attempts used</span>
+          </div>
+          <p className="small" style={{ margin: 0 }}>
+            All {PARAMS.maxAttempts} attempts for this test on this leg have been recorded, and fewer than{' '}
+            {PARAMS.minValidTrials} of them were valid — usually because tracking dropped out or the hop was not
+            detected. Nothing is lost: starting the leg again clears only this test on this leg, and the other leg and
+            the other tests are untouched.
+          </p>
+          <div className="row">
+            <button className="button" type="button" onClick={startLegOver}>
+              Start this leg again
+            </button>
+            <Link className="button ghost small" to="/athlete/check-in">
+              Back to check-in
+            </Link>
+          </div>
+        </div>
+      )}
 
       <div className="camera-wrap" style={camera?.aspect ? { aspectRatio: String(camera.aspect) } : undefined}>
         <video ref={videoRef} autoPlay playsInline muted className={isLanding ? 'front-view' : ''} />
@@ -1038,6 +1113,11 @@ export default function TestRunner() {
             <button className="button" type="button" onClick={() => startTrial()} disabled={!canStart}>
               {progress?.complete ? 'Leg complete' : 'Next trial now'}
             </button>
+            {!captured.valid && (
+              <button className="button ghost small" type="button" onClick={discardAttempt}>
+                Discard this attempt
+              </button>
+            )}
             {progress?.complete && (
               <Link className="button ghost" to="/athlete/check-in">
                 Back to check-in
