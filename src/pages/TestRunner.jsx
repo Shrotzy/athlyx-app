@@ -21,7 +21,6 @@ import {
   cameraSupport,
   createFpsMeter,
   createPoseLandmarker,
-  armsOutToSides,
   describeCameraError,
   handsOnHead,
   namedPoints,
@@ -61,20 +60,16 @@ const SIGNAL_KEY = 'athlyx.signal';
  * there is nothing extra to download and nothing to get wrong in poor light.
  */
 const SIGNAL_MODES = [
-  ['tpose', '🙆 T pose'],
   ['pose', '🙋 hands on head'],
   ['auto', '⏱ automatic'],
 ];
 
 const SIGNAL_DETAIL = {
-  tpose: 'Hold both arms straight out to the sides',
   pose: 'Put both hands on top of your head',
   auto: 'Starts automatically',
 };
 
 const SIGNAL_STATUS = {
-  tpose:
-    'Hold both arms straight out to the sides at shoulder height for a moment, then lower them and start. Best straight-on to the camera; from the side one arm is hidden.',
   pose: 'Put both hands flat on top of your head, hold for a moment, then lower them and start moving. Hands at head height stay inside the frame, however long your arms are.',
   auto: 'A spoken 3-2-1 starts each trial. Nothing to press, nothing to raise.',
 };
@@ -100,7 +95,7 @@ function writeFlag(key, value) {
 function readSignal() {
   try {
     const stored = localStorage.getItem(SIGNAL_KEY);
-    return ['tpose', 'pose', 'auto'].includes(stored) ? stored : 'tpose';
+    return ['pose', 'auto'].includes(stored) ? stored : 'pose';
   } catch {
     return 'pose';
   }
@@ -135,8 +130,8 @@ function bigCueFor(phaseName, isLanding) {
 }
 
 /** The spoken prompt for the chosen start signal. */
-function readyPrompt(mode) {
-  return mode === 'tpose' ? CUES.readyTpose : CUES.readyToGo;
+function readyPrompt() {
+  return CUES.readyToGo;
 }
 
 /** One line that says exactly what is left to do on this leg. */
@@ -508,20 +503,16 @@ export default function TestRunner() {
         const measuredFps = fpsMeterRef.current.push(now);
         if (measuredFps > 0) setFps(Math.round(measuredFps));
 
-        // Waiting for the start position. The same two helpers feed both the
-        // chosen signal and the on-screen diagnostic.
+        // Waiting for the start position.
         if (!recordingRef.current && readyRef.current) {
           const onHead = handsOnHead(named);
-          const tPose = armsOutToSides(named);
-          const mode = signalRef.current;
-          const active = mode === 'tpose' ? tPose.both : mode === 'pose' ? onHead.both : false;
 
           if (now - lastOverlayRef.current <= 80) {
-            setHandsSeen({ left: onHead.left || tPose.left, right: onHead.right || tPose.right });
+            setHandsSeen({ left: onHead.left, right: onHead.right });
           }
 
-          if (mode !== 'auto') {
-            const verdict = triggerGateRef.current.update(active, now);
+          if (signalRef.current !== 'auto') {
+            const verdict = triggerGateRef.current.update(onHead.both, now);
             setHoldProgress(verdict.progress);
             if (verdict.fired) {
               arm(false);
@@ -711,7 +702,7 @@ export default function TestRunner() {
     autoStartedRef.current = false;
 
     if (next !== 'auto') {
-      speak(next === 'tpose' ? 'T pose. Hold both arms out to the sides.' : 'Start with both hands on top of your head.');
+      speak('Start with both hands on top of your head.');
       setCue({ text: 'READY', detail: SIGNAL_DETAIL[next], tone: 'info' });
       if (phase === 'live') arm(true);
     } else {

@@ -203,7 +203,6 @@ export const CUES = {
   cameraOn:
     'Camera on. Stand back until your feet are in frame, then hold the start position when you are ready.',
   readyToGo: 'Ready to go? Put both hands on top of your head.',
-  readyTpose: 'Ready to go? Hold both arms straight out to the sides.',
   readyToGoAuto: 'Ready to go. Starting in three, two, one.',
   practiceIntro: 'This first one is your practice trial. It is not scored.',
   practiceDone: 'Nice. That is the practice trial done. Three scored trials to go.',

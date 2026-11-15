@@ -40,30 +40,6 @@ function headReference(points) {
 }
 
 /**
- * A T pose: both arms straight out to the sides at shoulder height.
- *
- * Easy to hold and easy to detect *from the front*. From the side — which is
- * how the hop tests are filmed — one arm is hidden behind the body, so this
- * signal suits the front-view landing test better than the side-view hops.
- */
-export function armsOutToSides(points) {
-  if (!points) return { both: false, left: false, right: false };
-
-  const out = (side) => {
-    const wrist = points?.[`${side}Wrist`];
-    const shoulder = points?.[`${side}Shoulder`];
-    if (!wrist?.visible || !shoulder?.visible) return false;
-    const atShoulderHeight = Math.abs(wrist.y - shoulder.y) <= 0.12;
-    const outToTheSide = Math.abs(wrist.x - shoulder.x) >= 0.14;
-    return atShoulderHeight && outToTheSide;
-  };
-
-  const left = out('left');
-  const right = out('right');
-  return { both: left && right, left, right };
-}
-
-/**
  * @returns {{both: boolean, left: boolean, right: boolean}}
  *   `both` is the start signal; the sides are reported so the screen can say
  *   which hand still needs to come up.
