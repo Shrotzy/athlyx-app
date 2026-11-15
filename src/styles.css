@@ -240,6 +240,30 @@ small {
   text-align: center;
 }
 
+/* The landing page is the wordmark on its own surface, with one clear action. */
+.hero-mark {
+  display: grid;
+  justify-items: center;
+  gap: 1.6rem;
+  padding: clamp(2.4rem, 9vw, 5.5rem) clamp(1rem, 4vw, 3rem);
+  border-radius: 24px;
+  border: 1px solid var(--line);
+  background:
+    radial-gradient(700px 340px at 50% -20%, rgba(94, 234, 212, 0.16), transparent 70%),
+    radial-gradient(520px 320px at 85% 115%, rgba(167, 139, 250, 0.14), transparent 70%),
+    var(--panel);
+  text-align: center;
+}
+
+.brand-hero {
+  margin: 0;
+  font-size: clamp(3rem, 13vw, 6.5rem);
+  font-weight: 700;
+  letter-spacing: -0.045em;
+  line-height: 1;
+  color: var(--text);
+}
+
 .hero {
   display: grid;
   gap: 1.5rem;
